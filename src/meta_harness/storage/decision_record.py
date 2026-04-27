@@ -145,6 +145,10 @@ def _validate_status_invariants(data: dict) -> None:
             raise DecisionRecordError(
                 "author_failed decisions must have non-null author_failure_reason"
             )
+        if data.get("reviewed_at") is None:
+            raise DecisionRecordError(
+                "author_failed decisions must have non-null reviewed_at"
+            )
         if what.get("diff_reference") is not None:
             raise DecisionRecordError(
                 "author_failed decisions must have null what.diff_reference"

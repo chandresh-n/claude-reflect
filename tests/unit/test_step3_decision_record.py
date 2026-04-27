@@ -399,6 +399,18 @@ class TestStatusInvariants:
         with pytest.raises(Exception):
             create_decision_record(bad)
 
+    def test_author_failed_requires_reviewed_at(self):
+        """author_failed decisions must have non-null reviewed_at."""
+        bad = _make_decision(
+            status="author_failed",
+            reviewed_at=None,
+            author_failure_reason="Could not produce a valid diff.",
+            human_reasoning=None,
+            what={**VALID_WHAT, "diff_reference": None},
+        )
+        with pytest.raises(Exception):
+            create_decision_record(bad)
+
     def test_author_failed_requires_null_diff_reference(self):
         """author_failed decisions must have null diff_reference."""
         bad = _make_decision(
