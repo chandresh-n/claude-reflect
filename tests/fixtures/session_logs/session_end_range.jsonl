@@ -1,0 +1,2 @@
+{"type": "user", "sessionId": "session-end-001", "uuid": "uuid-e01", "timestamp": "2024-02-01T09:00:00.000Z", "message": {"role": "user", "content": "Let us start a new project today"}}
+{"type": "assistant", "sessionId": "session-end-001", "uuid": "uuid-e02", "timestamp": "2024-02-01T09:00:15.000Z", "message": {"role": "assistant", "content": [{"type": "text", "text": "Great! What kind of project would you like to start?"}], "model": "claude-sonnet-4-6", "usage": {"input_tokens": 30, "output_tokens": 20}}}

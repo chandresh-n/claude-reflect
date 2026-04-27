@@ -1,0 +1,3 @@
+{"type": "user", "sessionId": "session-compact-001", "uuid": "uuid-c01", "timestamp": "2024-01-16T11:00:00.000Z", "message": {"role": "user", "content": "Can you continue where we left off?"}}
+{"type": "summary", "sessionId": "session-compact-001", "uuid": "uuid-c02", "timestamp": "2024-01-16T11:00:01.000Z", "summary": "The user was working on a Python project. Previous context summarized for token efficiency."}
+{"type": "assistant", "sessionId": "session-compact-001", "uuid": "uuid-c03", "timestamp": "2024-01-16T11:00:10.000Z", "message": {"role": "assistant", "content": [{"type": "text", "text": "Sure, continuing from the summary of your Python project..."}], "model": "claude-opus-4-6", "usage": {"input_tokens": 500, "output_tokens": 40}}}

@@ -1,0 +1,2 @@
+{"type": "user", "sessionId": "session-mid-001", "uuid": "uuid-m01", "timestamp": "2024-01-20T14:00:00.000Z", "message": {"role": "user", "content": "Please review this code snippet"}}
+{"type": "assistant", "sessionId": "session-mid-001", "uuid": "uuid-m02", "timestamp": "2024-01-20T14:00:15.000Z", "message": {"role": "assistant", "content": [{"type": "text", "text": "I will review it for you."}], "model": "claude-opus-4-6", "usage": {"input_tokens": 200, "output_tokens": 100}}}
