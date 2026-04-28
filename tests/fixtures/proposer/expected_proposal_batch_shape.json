@@ -1,0 +1,185 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ProposalBatch",
+  "description": "Schema for a proposal batch produced by the proposer, derived from docs/spec/01-data-structures/proposal.md",
+  "type": "object",
+  "required": ["batch_id", "run_id", "created_at", "window", "proposal_ids", "batch_narrative", "contains_forced_novelty", "proposals"],
+  "additionalProperties": false,
+  "properties": {
+    "batch_id": {"type": "string", "minLength": 1},
+    "run_id": {"type": "string", "minLength": 1},
+    "created_at": {"type": "string", "minLength": 1},
+    "window": {
+      "type": "object",
+      "required": ["start", "end"],
+      "additionalProperties": false,
+      "properties": {
+        "start": {"type": "string"},
+        "end": {"type": "string"}
+      }
+    },
+    "proposal_ids": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "batch_narrative": {"type": "string", "minLength": 1},
+    "contains_forced_novelty": {"type": "boolean"},
+    "proposals": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/proposal"
+      }
+    }
+  },
+  "$defs": {
+    "proposal": {
+      "type": "object",
+      "required": [
+        "proposal_id", "batch_id", "run_id", "created_at", "title",
+        "why", "what", "how", "prediction", "structural_tags",
+        "authoring_addendum"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "proposal_id": {"type": "string", "minLength": 1},
+        "batch_id": {"type": "string", "minLength": 1},
+        "run_id": {"type": "string", "minLength": 1},
+        "created_at": {"type": "string", "minLength": 1},
+        "title": {"type": "string", "minLength": 1},
+        "why": {
+          "type": "object",
+          "required": ["cited_gaps", "cited_sessions", "cited_prior_decisions", "prose_summary"],
+          "additionalProperties": false,
+          "properties": {
+            "cited_gaps": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["gap_id", "addressing_note"],
+                "additionalProperties": false,
+                "properties": {
+                  "gap_id": {"type": "string", "minLength": 1},
+                  "addressing_note": {"type": "string", "minLength": 1}
+                }
+              }
+            },
+            "cited_sessions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["session_id", "turn_range"],
+                "additionalProperties": false,
+                "properties": {
+                  "session_id": {"type": "string", "minLength": 1},
+                  "turn_range": {
+                    "type": "object",
+                    "required": ["start", "end"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "start": {"type": "integer", "minimum": 0},
+                      "end": {"type": "integer", "minimum": 0}
+                    }
+                  }
+                }
+              }
+            },
+            "cited_prior_decisions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["decision_id", "relational_note"],
+                "additionalProperties": false,
+                "properties": {
+                  "decision_id": {"type": "string", "minLength": 1},
+                  "relational_note": {"type": "string", "minLength": 1}
+                }
+              }
+            },
+            "prose_summary": {"type": "string", "minLength": 1}
+          }
+        },
+        "what": {
+          "type": "object",
+          "required": ["diff_reference", "files_touched", "short_description"],
+          "additionalProperties": false,
+          "properties": {
+            "diff_reference": {
+              "oneOf": [{"type": "null"}, {"type": "string"}]
+            },
+            "files_touched": {
+              "oneOf": [
+                {"type": "null"},
+                {"type": "array", "items": {"type": "string"}}
+              ]
+            },
+            "short_description": {"type": "string", "minLength": 1}
+          }
+        },
+        "how": {"type": "string", "minLength": 1},
+        "prediction": {"type": "string", "minLength": 1},
+        "structural_tags": {
+          "type": "object",
+          "required": ["change_type", "surface", "novelty_status"],
+          "additionalProperties": false,
+          "properties": {
+            "change_type": {
+              "type": "string",
+              "enum": ["addition", "modification", "removal", "restructuring"]
+            },
+            "surface": {
+              "type": "string",
+              "enum": ["claude_md", "skill", "agent", "hook", "settings", "mcp"]
+            },
+            "novelty_status": {
+              "type": "string",
+              "enum": ["normal", "forced_novelty", "null_baseline"]
+            },
+            "exploration_rationale": {"type": "string", "minLength": 1}
+          }
+        },
+        "authoring_addendum": {
+          "type": "object",
+          "required": ["actions", "purpose", "behavior_constraints"],
+          "additionalProperties": true,
+          "properties": {
+            "actions": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["type", "target_path"],
+                "additionalProperties": false,
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": ["create", "modify", "delete"]
+                  },
+                  "target_path": {"type": "string", "minLength": 1}
+                }
+              }
+            },
+            "purpose": {"type": "string", "minLength": 1},
+            "activation_conditions": {"type": "string"},
+            "behavior_constraints": {
+              "type": "array",
+              "minItems": 1,
+              "items": {"type": "string", "minLength": 1}
+            },
+            "examples": {
+              "type": "array",
+              "items": {"type": "string"}
+            },
+            "style_hints": {"type": "string"},
+            "reference_material": {
+              "type": "array",
+              "items": {"type": "string"}
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,142 @@
+{
+  "per_turn_observations": [
+    {
+      "session_id": "session-prop-001",
+      "turn_index": 0,
+      "assessment": "User requested adding a retry mechanism to the API client for transient failures.",
+      "effort_signal": {
+        "tokens_used": 450,
+        "model": "claude-sonnet-4-20250514",
+        "context_occupancy": 0.04,
+        "tool_calls": []
+      },
+      "flags": [{"flag_type": "pass_start"}]
+    },
+    {
+      "session_id": "session-prop-001",
+      "turn_index": 1,
+      "assessment": "Assistant searched for the API client file using Grep with 'api_client'. Found src/api_client.py.",
+      "effort_signal": {
+        "tokens_used": 520,
+        "model": "claude-sonnet-4-20250514",
+        "context_occupancy": 0.06,
+        "tool_calls": [{"tool_name": "Grep", "count": 1}]
+      },
+      "flags": []
+    },
+    {
+      "session_id": "session-prop-001",
+      "turn_index": 2,
+      "assessment": "Assistant read src/api_client.py. Identified the request method lacking retry logic.",
+      "effort_signal": {
+        "tokens_used": 680,
+        "model": "claude-sonnet-4-20250514",
+        "context_occupancy": 0.09,
+        "tool_calls": [{"tool_name": "Read", "count": 1}]
+      },
+      "flags": []
+    },
+    {
+      "session_id": "session-prop-001",
+      "turn_index": 3,
+      "assessment": "Assistant searched for existing retry patterns in the codebase. Found none.",
+      "effort_signal": {
+        "tokens_used": 750,
+        "model": "claude-sonnet-4-20250514",
+        "context_occupancy": 0.11,
+        "tool_calls": [{"tool_name": "Grep", "count": 1}]
+      },
+      "flags": []
+    },
+    {
+      "session_id": "session-prop-001",
+      "turn_index": 4,
+      "assessment": "Assistant searched for 'tenacity' and 'backoff' in requirements.txt. No retry library available.",
+      "effort_signal": {
+        "tokens_used": 830,
+        "model": "claude-sonnet-4-20250514",
+        "context_occupancy": 0.13,
+        "tool_calls": [{"tool_name": "Grep", "count": 1}]
+      },
+      "flags": []
+    },
+    {
+      "session_id": "session-prop-001",
+      "turn_index": 5,
+      "assessment": "Assistant searched for 'requests' import patterns to understand the HTTP layer. Redundant — the file was already read.",
+      "effort_signal": {
+        "tokens_used": 920,
+        "model": "claude-sonnet-4-20250514",
+        "context_occupancy": 0.15,
+        "tool_calls": [{"tool_name": "Grep", "count": 1}]
+      },
+      "flags": []
+    },
+    {
+      "session_id": "session-prop-001",
+      "turn_index": 6,
+      "assessment": "Assistant applied the fix: added retry with exponential backoff to the request method. Clean implementation.",
+      "effort_signal": {
+        "tokens_used": 1100,
+        "model": "claude-sonnet-4-20250514",
+        "context_occupancy": 0.18,
+        "tool_calls": [{"tool_name": "Edit", "count": 1}]
+      },
+      "flags": [{"flag_type": "pass_end"}]
+    }
+  ],
+  "pass_classifications": [
+    {
+      "session_id": "session-prop-001",
+      "turn_range": {"start": 0, "end": 6},
+      "pass_type": "successful_one_shot",
+      "harness_gap_rationale": "The harness could have provided guidance about available libraries or existing patterns to avoid redundant searches (turns 3-5). The assistant gathered information it already had or could not use.",
+      "contributing_gaps": null
+    }
+  ],
+  "gap_observations": [
+    {
+      "matched_gap_id": "gap-001",
+      "characterization": null,
+      "kind": "tool_call_loop",
+      "evidence_additions": [
+        {
+          "session_id": "session-prop-001",
+          "turn_range": {"start": 3, "end": 5},
+          "magnitude": {
+            "additional_turns": 2,
+            "additional_tokens": 900,
+            "correction_required": false
+          }
+        }
+      ]
+    },
+    {
+      "matched_gap_id": null,
+      "characterization": "Assistant re-reads or re-searches for information already present in context. After reading a file, the assistant searches for patterns that were visible in the file content, wasting turns.",
+      "kind": "redundant_context_gathering",
+      "evidence_additions": [
+        {
+          "session_id": "session-prop-001",
+          "turn_range": {"start": 5, "end": 5},
+          "magnitude": {
+            "additional_turns": 1,
+            "additional_tokens": 920,
+            "correction_required": false
+          }
+        }
+      ]
+    }
+  ],
+  "session_narratives": [
+    {
+      "session_id": "session-prop-001",
+      "outcome": "successful_with_friction",
+      "pass_counts_by_type": {
+        "successful_one_shot": 1
+      },
+      "gaps_observed": ["gap-001"],
+      "narrative": "Session where user asked for retry logic in API client. Assistant located the file quickly but then performed redundant searches for library availability and import patterns before implementing the fix. Tool-call loop and redundant context gathering patterns visible."
+    }
+  ]
+}
