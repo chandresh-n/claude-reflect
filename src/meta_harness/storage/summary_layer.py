@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import enum
 import re
-from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -135,22 +134,44 @@ def regenerate_index(summary_dir: Path) -> str:
 
     Writes index.md to summary_dir and returns the content string.
     Deterministic: same disk state always produces identical output.
+    The index timestamp is derived from the maximum page timestamp on disk,
+    not from wall-clock time, ensuring byte-identical output for identical
+    disk state.
     """
-    lines: list[str] = []
-    lines.append("# Summary Layer Index")
-    lines.append("")
-    lines.append(f"Last updated: {datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}")
-    lines.append("")
+    # First pass: collect all pages and their timestamps to derive the
+    # index-level "Last updated" from disk state (not wall clock).
+    all_page_data: dict[PageKind, list[tuple[str, str, str]]] = {}
+    max_timestamp = ""
 
     for kind in _KIND_ORDER:
         pages = list_pages(summary_dir=summary_dir, page_kind=kind)
         if not pages:
             continue
-        lines.append(_KIND_SECTION_HEADER[kind])
+        entries: list[tuple[str, str, str]] = []
         for page_path in pages:
             anchor = page_path.stem
             content = page_path.read_text(encoding="utf-8")
             last_updated = _extract_last_updated(content)
+            entries.append((anchor, last_updated, content))
+            if last_updated > max_timestamp:
+                max_timestamp = last_updated
+        all_page_data[kind] = entries
+
+    # Fall back to a fixed epoch if no pages exist (deterministic).
+    if not max_timestamp:
+        max_timestamp = "1970-01-01T00:00:00Z"
+
+    lines: list[str] = []
+    lines.append("# Summary Layer Index")
+    lines.append("")
+    lines.append(f"Last updated: {max_timestamp}")
+    lines.append("")
+
+    for kind in _KIND_ORDER:
+        if kind not in all_page_data:
+            continue
+        lines.append(_KIND_SECTION_HEADER[kind])
+        for anchor, last_updated, _content in all_page_data[kind]:
             lines.append(f"  - {anchor}, {last_updated}")
         lines.append("")
 
