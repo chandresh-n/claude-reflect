@@ -1,0 +1,53 @@
+{
+  "proposal_id": "prop-author-impossible-001",
+  "batch_id": "batch-author-test-001",
+  "run_id": "run-author-test-001",
+  "created_at": "2026-04-29T10:00:00Z",
+  "title": "Create skill that fires only on glob-excluded file reads",
+  "why": {
+    "cited_gaps": [
+      {
+        "gap_id": "gap-002",
+        "addressing_note": "Sessions show wasted turns reading generated files. A skill filtering file reads could help."
+      }
+    ],
+    "cited_sessions": [
+      {
+        "session_id": "session-002",
+        "turn_range": {"start": 1, "end": 4}
+      }
+    ],
+    "cited_prior_decisions": [],
+    "prose_summary": "A skill that intercepts file reads and filters them based on glob exclusion patterns would prevent wasted turns on generated files."
+  },
+  "what": {
+    "diff_reference": null,
+    "files_touched": null,
+    "short_description": "Create a skill that intercepts file reads and blocks access to glob-excluded paths."
+  },
+  "how": "The skill must fire on every file read and check whether the path matches a user-defined glob exclusion list, blocking the read if it does.",
+  "prediction": "Sessions will no longer waste turns reading generated or excluded files.",
+  "structural_tags": {
+    "change_type": "addition",
+    "surface": "skill",
+    "novelty_status": "normal"
+  },
+  "authoring_addendum": {
+    "actions": [
+      {"type": "create", "target_path": ".claude/skills/file_read_filter/SKILL.md"}
+    ],
+    "purpose": "Create a skill that intercepts file read tool calls and blocks reads to paths matching a configurable glob exclusion list.",
+    "activation_conditions": "Must fire on every file read tool call and block the read before it executes if the path matches any exclusion glob.",
+    "behavior_constraints": [
+      "Must intercept and block file read tool calls before they execute.",
+      "Must support configurable glob patterns for exclusion.",
+      "Must not allow any read of excluded paths, even partial reads.",
+      "Must fire on the Read tool's internal dispatch, not after the read completes."
+    ],
+    "examples": [
+      "User reads dist/bundle.js -> skill blocks the read and returns a warning message."
+    ],
+    "style_hints": "Match the structure of existing skills under .claude/skills/.",
+    "reference_material": [".claude/skills/"]
+  }
+}

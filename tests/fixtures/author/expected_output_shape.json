@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Author Output Shape",
+  "description": "Schema for author agent output — either a successful diff or an honest failure.",
+  "type": "object",
+  "required": ["status", "proposal_id", "diff_reference", "files_touched", "branch_name"],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["success", "author_failed"]
+    },
+    "proposal_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "diff_reference": {
+      "description": "Git commit hash or branch reference. Non-null on success, null on failure.",
+      "type": ["string", "null"]
+    },
+    "files_touched": {
+      "description": "List of file paths modified. Non-null on success, null on failure.",
+      "oneOf": [
+        {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "minItems": 1
+        },
+        {"type": "null"}
+      ]
+    },
+    "branch_name": {
+      "description": "Git branch name for the proposal. Non-null on success, null on failure.",
+      "type": ["string", "null"]
+    },
+    "author_failure_reason": {
+      "description": "Prose explaining why the author could not produce a diff. Present only on failure.",
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "additionalProperties": false,
+  "if": {
+    "properties": {"status": {"const": "success"}}
+  },
+  "then": {
+    "properties": {
+      "diff_reference": {"type": "string", "minLength": 1},
+      "files_touched": {
+        "type": "array",
+        "items": {"type": "string", "minLength": 1},
+        "minItems": 1
+      },
+      "branch_name": {"type": "string", "minLength": 1}
+    },
+    "not": {"required": ["author_failure_reason"]}
+  },
+  "else": {
+    "required": ["author_failure_reason"],
+    "properties": {
+      "diff_reference": {"type": "null"},
+      "files_touched": {"type": "null"},
+      "branch_name": {"type": "null"}
+    }
+  }
+}
