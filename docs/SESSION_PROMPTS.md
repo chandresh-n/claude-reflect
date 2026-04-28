@@ -37,8 +37,8 @@ Each step has three sessions: A (failing gate), B (implementation), V (verificat
 - [x] 8V — Step 8 Verification subagent
 - [x] 9A — Step 9 Session A
 - [x] 9B — Step 9 Session B
-- [ ] 9V — Step 9 Verification subagent
-- [ ] 10A — Step 10 Session A
+- [x] 9V — Step 9 Verification subagent
+- [x] 10A — Step 10 Session A
 - [ ] 10B — Step 10 Session B
 - [ ] 10V — Step 10 Verification subagent
 - [ ] 11A — Step 11 Session A
