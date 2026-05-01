@@ -319,11 +319,15 @@ def _evaluate_batch(
         f"## Session logs to evaluate\n\n{session_text}"
     )
 
+    # Scale timeout with batch size: 120s base + 60s per session
+    timeout = 120 + 60 * len(sessions)
+
     try:
         raw_text = invoke_claude(
             system_prompt=SYSTEM_PROMPT,
             user_prompt=user_prompt,
             model=model,
+            timeout=timeout,
         )
     except ClaudeRunnerError as e:
         raise EvaluatorError(f"Claude invocation failed: {e}") from e
