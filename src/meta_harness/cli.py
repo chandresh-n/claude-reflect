@@ -32,6 +32,7 @@ from meta_harness.storage.session_logs import SessionLogReader
 from meta_harness.agents.evaluator import evaluate, EvaluatorError
 from meta_harness.agents.proposer import propose, ProposerError
 from meta_harness.agents.author import author as author_agent, AuthorError
+from meta_harness.agents.claude_runner import ClaudeRunnerError
 from meta_harness.processes.run_loop import RunLoop, RunState, RunLoopError
 
 
@@ -267,12 +268,11 @@ class ReviewCommand:
             except EvaluatorError as e:
                 self._log(f"Evaluator error: {e}")
                 return _empty_eval
-            except (TypeError, Exception) as e:
-                if "api_key" in str(e).lower() or "auth" in str(e).lower():
-                    self._log(f"API key not configured. Set ANTHROPIC_API_KEY environment variable.")
-                    self._log(f"  export ANTHROPIC_API_KEY=sk-ant-...")
-                else:
-                    self._log(f"Evaluator failed: {e}")
+            except ClaudeRunnerError as e:
+                self._log(f"Evaluator failed (Claude runner): {e}")
+                return _empty_eval
+            except Exception as e:
+                self._log(f"Evaluator failed: {e}")
                 return _empty_eval
 
         def real_proposer(eval_output, repo, date_range, **kwargs):
