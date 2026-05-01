@@ -17,6 +17,7 @@ Constraints:
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any, List, Optional
 
@@ -308,6 +309,7 @@ def _evaluate_batch(
     repo: Path,
     model: str,
     existing_gaps: str,
+    label: Optional[str] = None,
 ) -> dict:
     """Run the evaluator on a single batch of sessions."""
     session_text = _format_sessions_for_prompt(sessions)
@@ -328,6 +330,7 @@ def _evaluate_batch(
             user_prompt=user_prompt,
             model=model,
             timeout=timeout,
+            label=label,
         )
     except ClaudeRunnerError as e:
         raise EvaluatorError(f"Claude invocation failed: {e}") from e
@@ -366,12 +369,20 @@ def evaluate(
     existing_gaps = _format_existing_gaps(repo)
     batches = _split_into_batches(sessions)
 
-    if len(batches) == 1:
-        output = _evaluate_batch(batches[0], repo, model, existing_gaps)
+    total = len(batches)
+    if total == 1:
+        output = _evaluate_batch(
+            batches[0], repo, model, existing_gaps,
+            label=f"evaluator ({len(sessions)} sessions)",
+        )
     else:
         batch_outputs = []
         for i, batch in enumerate(batches):
-            batch_output = _evaluate_batch(batch, repo, model, existing_gaps)
+            label = f"evaluator batch {i + 1}/{total} ({len(batch)} sessions)"
+            print(f"  {label}...", file=sys.stderr, flush=True)
+            batch_output = _evaluate_batch(
+                batch, repo, model, existing_gaps, label=label,
+            )
             batch_outputs.append(batch_output)
         output = _merge_evaluator_outputs(batch_outputs)
 

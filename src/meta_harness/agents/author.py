@@ -438,6 +438,7 @@ def author(
             system_prompt=SYSTEM_PROMPT,
             user_prompt=context,
             model=model,
+            label=f"author {proposal_id}",
         )
     except ClaudeRunnerError as e:
         raise AuthorError(f"Claude invocation failed: {e}") from e

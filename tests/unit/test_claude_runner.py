@@ -1,103 +1,127 @@
 """
 Unit tests for the claude_runner subprocess helper.
 
-All tests mock subprocess.run to avoid actually invoking the claude CLI.
+All tests mock subprocess.Popen to avoid actually invoking the claude CLI.
 """
 from __future__ import annotations
 
 import json
 import os
 import subprocess
+from io import StringIO
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, PropertyMock
 
 import pytest
 
 from meta_harness.agents.claude_runner import ClaudeRunnerError, invoke_claude
 
 
-@patch("meta_harness.agents.claude_runner.subprocess.run")
-def test_invoke_claude_returns_text(mock_run: MagicMock) -> None:
-    """Mocks subprocess to return valid JSON; asserts helper returns the result text."""
-    mock_run.return_value = MagicMock(
-        returncode=0,
-        stdout=json.dumps({"type": "result", "is_error": False, "result": "hello"}),
-        stderr="",
-    )
+def _make_mock_popen(result_text: str, is_error: bool = False, returncode: int = 0):
+    """Create a mock Popen that streams a result event via stdout."""
+    result_event = json.dumps({
+        "type": "result",
+        "is_error": is_error,
+        "result": result_text,
+    })
+
+    mock_proc = MagicMock()
+    mock_proc.stdin = MagicMock()
+    mock_proc.stdout = StringIO(result_event + "\n")
+    mock_proc.stderr = StringIO("")
+    mock_proc.returncode = returncode
+    mock_proc.wait.return_value = returncode
+    return mock_proc
+
+
+def _make_mock_popen_with_progress(
+    result_text: str, output_tokens: int = 100
+):
+    """Create a mock Popen that streams an assistant event then a result event."""
+    assistant_event = json.dumps({
+        "type": "assistant",
+        "message": {"usage": {"output_tokens": output_tokens}},
+    })
+    result_event = json.dumps({
+        "type": "result",
+        "is_error": False,
+        "result": result_text,
+    })
+
+    mock_proc = MagicMock()
+    mock_proc.stdin = MagicMock()
+    mock_proc.stdout = StringIO(assistant_event + "\n" + result_event + "\n")
+    mock_proc.stderr = StringIO("")
+    mock_proc.returncode = 0
+    mock_proc.wait.return_value = 0
+    return mock_proc
+
+
+@patch("meta_harness.agents.claude_runner.subprocess.Popen")
+def test_invoke_claude_returns_text(mock_popen: MagicMock) -> None:
+    """Mocks Popen to return valid stream-json; asserts helper returns result text."""
+    mock_popen.return_value = _make_mock_popen("hello")
     result = invoke_claude(system_prompt="You are a helper.", user_prompt="Say hello")
     assert result == "hello"
-    # User prompt should be passed via stdin (input kwarg), not as a CLI arg
-    call_kwargs = mock_run.call_args
-    assert call_kwargs.kwargs.get("input") == "Say hello"
-    cmd = call_kwargs[0][0]
-    assert "Say hello" not in cmd, "user_prompt should not be a CLI arg"
+    # User prompt should be written to stdin
+    mock_proc = mock_popen.return_value
+    mock_proc.stdin.write.assert_called_once_with("Say hello")
+    mock_proc.stdin.close.assert_called_once()
 
 
-@patch("meta_harness.agents.claude_runner.subprocess.run")
-def test_env_strips_api_key(mock_run: MagicMock) -> None:
-    """Asserts ANTHROPIC_API_KEY is NOT in the env dict passed to subprocess."""
-    mock_run.return_value = MagicMock(
-        returncode=0,
-        stdout=json.dumps({"type": "result", "is_error": False, "result": "ok"}),
-        stderr="",
-    )
+@patch("meta_harness.agents.claude_runner.subprocess.Popen")
+def test_env_strips_api_key(mock_popen: MagicMock) -> None:
+    """Asserts ANTHROPIC_API_KEY is NOT in the env dict passed to Popen."""
+    mock_popen.return_value = _make_mock_popen("ok")
     with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-secret-key"}, clear=False):
         invoke_claude(system_prompt="sys", user_prompt="usr")
 
-    call_kwargs = mock_run.call_args
+    call_kwargs = mock_popen.call_args
     env_passed = call_kwargs.kwargs.get("env") or call_kwargs[1].get("env")
-    assert env_passed is not None, "env kwarg should be passed to subprocess.run"
+    assert env_passed is not None, "env kwarg should be passed to Popen"
     assert "ANTHROPIC_API_KEY" not in env_passed
 
 
-@patch("meta_harness.agents.claude_runner.subprocess.run")
-def test_error_handling(mock_run: MagicMock) -> None:
+@patch("meta_harness.agents.claude_runner.subprocess.Popen")
+def test_error_handling(mock_popen: MagicMock) -> None:
     """Asserts ClaudeRunnerError is raised when is_error is true."""
-    mock_run.return_value = MagicMock(
-        returncode=0,
-        stdout=json.dumps(
-            {"type": "result", "is_error": True, "result": "Connection failed"}
-        ),
-        stderr="",
+    mock_popen.return_value = _make_mock_popen(
+        "Connection failed", is_error=True
     )
     with pytest.raises(ClaudeRunnerError, match="Connection failed"):
         invoke_claude(system_prompt="sys", user_prompt="usr")
 
 
-@patch("meta_harness.agents.claude_runner.subprocess.run")
-def test_nonzero_exit_raises(mock_run: MagicMock) -> None:
-    """Asserts ClaudeRunnerError is raised on non-zero exit with non-JSON stderr."""
-    mock_run.return_value = MagicMock(
-        returncode=1,
-        stdout="not json",
-        stderr="some error",
-    )
-    with pytest.raises(ClaudeRunnerError, match="exited with code 1"):
+@patch("meta_harness.agents.claude_runner.subprocess.Popen")
+def test_nonzero_exit_raises(mock_popen: MagicMock) -> None:
+    """Asserts ClaudeRunnerError is raised on non-zero exit with no result event."""
+    mock_proc = MagicMock()
+    mock_proc.stdin = MagicMock()
+    mock_proc.stdout = StringIO("")  # no events
+    mock_proc.stderr = StringIO("")
+    mock_proc.returncode = 1
+    mock_proc.wait.return_value = 1
+    mock_popen.return_value = mock_proc
+    with pytest.raises(ClaudeRunnerError, match="no result event"):
         invoke_claude(system_prompt="sys", user_prompt="usr")
 
 
-@patch("meta_harness.agents.claude_runner.subprocess.run")
-def test_nonzero_exit_extracts_error_from_stdout_json(mock_run: MagicMock) -> None:
-    """When exit code is 1 but stdout has JSON with is_error, extract the message."""
-    mock_run.return_value = MagicMock(
-        returncode=1,
-        stdout=json.dumps(
-            {"type": "result", "is_error": True, "result": "Invalid API key"}
-        ),
-        stderr="",
+@patch("meta_harness.agents.claude_runner.subprocess.Popen")
+def test_nonzero_exit_extracts_error_from_result_event(mock_popen: MagicMock) -> None:
+    """When exit code is 1 but stream has a result event with is_error, extract it."""
+    mock_popen.return_value = _make_mock_popen(
+        "Invalid API key", is_error=True, returncode=1
     )
     with pytest.raises(ClaudeRunnerError, match="Invalid API key"):
         invoke_claude(system_prompt="sys", user_prompt="usr")
 
 
-@patch("meta_harness.agents.claude_runner.subprocess.run")
-def test_system_prompt_written_to_tempfile(mock_run: MagicMock) -> None:
+@patch("meta_harness.agents.claude_runner.subprocess.Popen")
+def test_system_prompt_written_to_tempfile(mock_popen: MagicMock) -> None:
     """Asserts --system-prompt-file flag points to a file with the system prompt."""
     system_prompt_text = "You are an expert reviewer."
 
-    def capture_call(*args, **kwargs):
-        cmd = args[0]
-        # Find the --system-prompt-file arg and read the file
+    def capture_popen(cmd, **kwargs):
         idx = cmd.index("--system-prompt-file")
         sp_path = cmd[idx + 1]
         with open(sp_path) as f:
@@ -105,32 +129,34 @@ def test_system_prompt_written_to_tempfile(mock_run: MagicMock) -> None:
         assert content == system_prompt_text, (
             f"System prompt file content mismatch: {content!r}"
         )
-        return MagicMock(
-            returncode=0,
-            stdout=json.dumps(
-                {"type": "result", "is_error": False, "result": "done"}
-            ),
-            stderr="",
-        )
+        return _make_mock_popen("done")
 
-    mock_run.side_effect = capture_call
+    mock_popen.side_effect = capture_popen
     invoke_claude(system_prompt=system_prompt_text, user_prompt="Review this")
 
 
-@patch("meta_harness.agents.claude_runner.subprocess.run")
-def test_model_passed_through(mock_run: MagicMock) -> None:
+@patch("meta_harness.agents.claude_runner.subprocess.Popen")
+def test_model_passed_through(mock_popen: MagicMock) -> None:
     """Asserts --model flag matches the passed model arg."""
-    mock_run.return_value = MagicMock(
-        returncode=0,
-        stdout=json.dumps({"type": "result", "is_error": False, "result": "ok"}),
-        stderr="",
-    )
+    mock_popen.return_value = _make_mock_popen("ok")
     invoke_claude(
         system_prompt="sys", user_prompt="usr", model="claude-opus-4-6"
     )
-    cmd = mock_run.call_args[0][0]
+    cmd = mock_popen.call_args[0][0]
     idx = cmd.index("--model")
     assert cmd[idx + 1] == "claude-opus-4-6"
+
+
+@patch("meta_harness.agents.claude_runner.subprocess.Popen")
+def test_progress_output(mock_popen: MagicMock, capsys) -> None:
+    """Asserts progress is printed to stderr during streaming."""
+    mock_popen.return_value = _make_mock_popen_with_progress("result", output_tokens=50)
+    result = invoke_claude(
+        system_prompt="sys", user_prompt="usr", label="test-agent"
+    )
+    assert result == "result"
+    captured = capsys.readouterr()
+    assert "[test-agent]" in captured.err
 
 
 # ---------------------------------------------------------------------------
@@ -138,8 +164,8 @@ def test_model_passed_through(mock_run: MagicMock) -> None:
 # ---------------------------------------------------------------------------
 
 
-@patch("meta_harness.agents.claude_runner.subprocess.run")
-def test_author_uses_runner(mock_run: MagicMock) -> None:
+@patch("meta_harness.agents.claude_runner.subprocess.Popen")
+def test_author_uses_runner(mock_popen: MagicMock) -> None:
     """Verify author() delegates to invoke_claude instead of anthropic SDK."""
     from pathlib import Path
     import tempfile
@@ -158,16 +184,7 @@ def test_author_uses_runner(mock_run: MagicMock) -> None:
         ],
     })
 
-    # Mock subprocess.run (used by invoke_claude) to return canned JSON
-    mock_run.return_value = MagicMock(
-        returncode=0,
-        stdout=json.dumps({
-            "type": "result",
-            "is_error": False,
-            "result": canned_author_json,
-        }),
-        stderr="",
-    )
+    mock_popen.return_value = _make_mock_popen(canned_author_json)
 
     intent = {
         "proposal_id": "prop-001",
@@ -191,10 +208,10 @@ def test_author_uses_runner(mock_run: MagicMock) -> None:
     assert result["branch_name"] == "meta-harness/proposal/prop-001"
     assert result["diff_reference"] == "no-commit"
 
-    # Verify invoke_claude was called (subprocess.run was called by it)
-    assert mock_run.called, "subprocess.run should have been called via invoke_claude"
-    cmd = mock_run.call_args[0][0]
-    assert "claude" in cmd[0], "Should invoke 'claude' CLI, not anthropic SDK"
+    # Verify Popen was called (via invoke_claude)
+    assert mock_popen.called, "Popen should have been called via invoke_claude"
+    cmd = mock_popen.call_args[0][0]
+    assert "claude" in cmd[0], "Should invoke 'claude' CLI"
 
 
 @patch("meta_harness.agents.evaluator.invoke_claude")

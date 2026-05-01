@@ -400,6 +400,7 @@ def propose(
             system_prompt=SYSTEM_PROMPT,
             user_prompt=context,
             model=model,
+            label="proposer",
         )
     except ClaudeRunnerError as e:
         raise ProposerError(f"Claude invocation failed: {e}") from e
