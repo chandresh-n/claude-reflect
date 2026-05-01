@@ -1,20 +1,43 @@
 """
 Unit tests for the claude_runner subprocess helper.
 
-All tests mock subprocess.Popen to avoid actually invoking the claude CLI.
+All tests mock subprocess.Popen and select.select to avoid actually
+invoking the claude CLI.
 """
 from __future__ import annotations
 
 import json
 import os
 import subprocess
-from io import StringIO
+from io import BytesIO, StringIO
 from pathlib import Path
 from unittest.mock import MagicMock, patch, PropertyMock
 
 import pytest
 
 from meta_harness.agents.claude_runner import ClaudeRunnerError, invoke_claude
+
+
+class _MockStdout:
+    """A mock stdout that works with select.select by providing data via read()."""
+
+    def __init__(self, data: str):
+        self._data = data
+        self._pos = 0
+
+    def read(self, n: int = -1) -> str:
+        if self._pos >= len(self._data):
+            return ""
+        if n < 0:
+            chunk = self._data[self._pos:]
+            self._pos = len(self._data)
+        else:
+            chunk = self._data[self._pos:self._pos + n]
+            self._pos += len(chunk)
+        return chunk
+
+    def close(self):
+        pass
 
 
 def _make_mock_popen(result_text: str, is_error: bool = False, returncode: int = 0):
@@ -27,10 +50,11 @@ def _make_mock_popen(result_text: str, is_error: bool = False, returncode: int =
 
     mock_proc = MagicMock()
     mock_proc.stdin = MagicMock()
-    mock_proc.stdout = StringIO(result_event + "\n")
-    mock_proc.stderr = StringIO("")
+    mock_proc.stdout = _MockStdout(result_event + "\n")
+    mock_proc.stderr = MagicMock()
     mock_proc.returncode = returncode
     mock_proc.wait.return_value = returncode
+    mock_proc.poll.return_value = returncode
     return mock_proc
 
 
@@ -50,13 +74,26 @@ def _make_mock_popen_with_progress(
 
     mock_proc = MagicMock()
     mock_proc.stdin = MagicMock()
-    mock_proc.stdout = StringIO(assistant_event + "\n" + result_event + "\n")
-    mock_proc.stderr = StringIO("")
+    mock_proc.stdout = _MockStdout(assistant_event + "\n" + result_event + "\n")
+    mock_proc.stderr = MagicMock()
     mock_proc.returncode = 0
     mock_proc.wait.return_value = 0
+    mock_proc.poll.return_value = 0
     return mock_proc
 
 
+def _mock_select_ready(rlist, wlist, xlist, timeout=None):
+    """Mock select that always says stdout is ready."""
+    return (rlist, [], [])
+
+
+# Apply select mock to all Popen-based tests via a stacked decorator pattern
+_patch_select = patch(
+    "meta_harness.agents.claude_runner.select.select", _mock_select_ready
+)
+
+
+@_patch_select
 @patch("meta_harness.agents.claude_runner.subprocess.Popen")
 def test_invoke_claude_returns_text(mock_popen: MagicMock) -> None:
     """Mocks Popen to return valid stream-json; asserts helper returns result text."""
@@ -69,6 +106,7 @@ def test_invoke_claude_returns_text(mock_popen: MagicMock) -> None:
     mock_proc.stdin.close.assert_called_once()
 
 
+@_patch_select
 @patch("meta_harness.agents.claude_runner.subprocess.Popen")
 def test_env_strips_api_key(mock_popen: MagicMock) -> None:
     """Asserts ANTHROPIC_API_KEY is NOT in the env dict passed to Popen."""
@@ -82,6 +120,7 @@ def test_env_strips_api_key(mock_popen: MagicMock) -> None:
     assert "ANTHROPIC_API_KEY" not in env_passed
 
 
+@_patch_select
 @patch("meta_harness.agents.claude_runner.subprocess.Popen")
 def test_error_handling(mock_popen: MagicMock) -> None:
     """Asserts ClaudeRunnerError is raised when is_error is true."""
@@ -92,20 +131,23 @@ def test_error_handling(mock_popen: MagicMock) -> None:
         invoke_claude(system_prompt="sys", user_prompt="usr")
 
 
+@_patch_select
 @patch("meta_harness.agents.claude_runner.subprocess.Popen")
 def test_nonzero_exit_raises(mock_popen: MagicMock) -> None:
     """Asserts ClaudeRunnerError is raised on non-zero exit with no result event."""
     mock_proc = MagicMock()
     mock_proc.stdin = MagicMock()
-    mock_proc.stdout = StringIO("")  # no events
-    mock_proc.stderr = StringIO("")
+    mock_proc.stdout = _MockStdout("")  # no events
+    mock_proc.stderr = MagicMock()
     mock_proc.returncode = 1
     mock_proc.wait.return_value = 1
+    mock_proc.poll.return_value = 1
     mock_popen.return_value = mock_proc
     with pytest.raises(ClaudeRunnerError, match="no result event"):
         invoke_claude(system_prompt="sys", user_prompt="usr")
 
 
+@_patch_select
 @patch("meta_harness.agents.claude_runner.subprocess.Popen")
 def test_nonzero_exit_extracts_error_from_result_event(mock_popen: MagicMock) -> None:
     """When exit code is 1 but stream has a result event with is_error, extract it."""
@@ -116,6 +158,7 @@ def test_nonzero_exit_extracts_error_from_result_event(mock_popen: MagicMock) ->
         invoke_claude(system_prompt="sys", user_prompt="usr")
 
 
+@_patch_select
 @patch("meta_harness.agents.claude_runner.subprocess.Popen")
 def test_system_prompt_written_to_tempfile(mock_popen: MagicMock) -> None:
     """Asserts --system-prompt-file flag points to a file with the system prompt."""
@@ -135,6 +178,7 @@ def test_system_prompt_written_to_tempfile(mock_popen: MagicMock) -> None:
     invoke_claude(system_prompt=system_prompt_text, user_prompt="Review this")
 
 
+@_patch_select
 @patch("meta_harness.agents.claude_runner.subprocess.Popen")
 def test_model_passed_through(mock_popen: MagicMock) -> None:
     """Asserts --model flag matches the passed model arg."""
@@ -147,6 +191,7 @@ def test_model_passed_through(mock_popen: MagicMock) -> None:
     assert cmd[idx + 1] == "claude-opus-4-6"
 
 
+@_patch_select
 @patch("meta_harness.agents.claude_runner.subprocess.Popen")
 def test_progress_output(mock_popen: MagicMock, capsys) -> None:
     """Asserts progress is printed to stderr during streaming."""
@@ -164,6 +209,7 @@ def test_progress_output(mock_popen: MagicMock, capsys) -> None:
 # ---------------------------------------------------------------------------
 
 
+@_patch_select
 @patch("meta_harness.agents.claude_runner.subprocess.Popen")
 def test_author_uses_runner(mock_popen: MagicMock) -> None:
     """Verify author() delegates to invoke_claude instead of anthropic SDK."""
