@@ -178,7 +178,7 @@ def test_author_uses_runner(mock_run: MagicMock) -> None:
     assert "claude" in cmd[0], "Should invoke 'claude' CLI, not anthropic SDK"
 
 
-@patch("meta_harness.agents.claude_runner.invoke_claude")
+@patch("meta_harness.agents.evaluator.invoke_claude")
 def test_evaluator_uses_runner(mock_invoke: MagicMock) -> None:
     """Evaluator must call invoke_claude (not anthropic SDK) and return 4-key output."""
     import importlib
@@ -281,7 +281,7 @@ def test_evaluator_uses_runner(mock_invoke: MagicMock) -> None:
 # ---------------------------------------------------------------------------
 
 
-@patch("meta_harness.agents.claude_runner.invoke_claude")
+@patch("meta_harness.agents.proposer.invoke_claude")
 def test_proposer_uses_runner(mock_invoke: MagicMock, tmp_path: Path) -> None:
     """Proposer's propose() must call invoke_claude instead of anthropic SDK directly."""
     import importlib

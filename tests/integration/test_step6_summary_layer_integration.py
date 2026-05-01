@@ -22,6 +22,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from typing import Optional
 from types import ModuleType
 
 import pytest
@@ -116,7 +117,7 @@ class TestProposerCannotReachSummaryLayer:
         return imports
 
     def _collect_all_imports_transitively(
-        self, start_file: Path, src_root: Path, visited: set | None = None
+        self, start_file: Path, src_root: Path, visited: Optional[set] = None
     ) -> set:
         """
         Recursively collect all intra-project modules imported (directly
