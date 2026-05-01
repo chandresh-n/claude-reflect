@@ -27,8 +27,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import anthropic
-
+from meta_harness.agents.claude_runner import ClaudeRunnerError, invoke_claude
 from meta_harness.storage.gap_record import read_gap_record, update_gap_record
 from meta_harness.storage.archive_entry import ArchiveEntryError
 
@@ -395,20 +394,15 @@ def propose(
         window=window,
     )
 
-    # Invoke the proposer agent
-    client = anthropic.Anthropic()
-    response = client.messages.create(
-        model=model,
-        max_tokens=16384,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": context}],
-    )
-
-    # Extract JSON from response
-    raw_text = ""
-    for block in response.content:
-        if block.type == "text":
-            raw_text += block.text
+    # Invoke the proposer agent via claude_runner
+    try:
+        raw_text = invoke_claude(
+            system_prompt=SYSTEM_PROMPT,
+            user_prompt=context,
+            model=model,
+        )
+    except ClaudeRunnerError as e:
+        raise ProposerError(f"Claude invocation failed: {e}") from e
 
     batch = _parse_proposer_output(raw_text)
 
