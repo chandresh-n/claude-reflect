@@ -16,12 +16,22 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
+import subprocess
 import sys
-from datetime import datetime, timezone, timedelta
+import tempfile
+from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import yaml
+
 from meta_harness.storage.knowledge_base import setup as kb_setup
+from meta_harness.storage.session_logs import SessionLogReader
+from meta_harness.agents.evaluator import evaluate, EvaluatorError
+from meta_harness.agents.proposer import propose, ProposerError
+from meta_harness.agents.author import author as author_agent, AuthorError
 from meta_harness.processes.run_loop import RunLoop, RunState, RunLoopError
 
 
@@ -205,8 +215,7 @@ class ReviewCommand:
         # Phase 1: auto-setup on fresh repo
         kb_dir = self.repo / ".meta-harness"
         if not kb_dir.is_dir():
-            if self.verbose:
-                print("Initializing knowledge base (Phase 1)...", flush=True)
+            self._log("Initializing knowledge base (Phase 1)...")
             kb_setup(self.repo)
 
         # If resuming, validate the run exists
@@ -219,17 +228,103 @@ class ReviewCommand:
                     f"Cannot resume: no run state found for {self.resume_run_id}"
                 )
 
-        if self.verbose:
-            print(f"Starting review pass (range: {self.date_range})...", flush=True)
+        self._log(f"Starting review pass (range: {self.date_range})...")
+
+        # Load config for model choices
+        config = _load_config(self.repo)
+
+        # Collect sessions
+        date_range_dict = _parse_date_range(self.date_range)
+        sessions = _collect_sessions(self.repo, date_range_dict, verbose=self.verbose)
+
+        if not sessions and not self.resume_run_id:
+            self._log(f"No sessions found in range {date_range_dict['start']} to {date_range_dict['end']}.")
+            self._log("Hint: session logs are read from ~/.claude/projects/")
+            # Still run the loop so state is tracked, but with empty sessions
+            # the evaluator will be skipped gracefully
+
+        self._log(f"Found {len(sessions)} session(s) in range.")
+
+        # Build agent wrappers that use the real implementations
+        evaluator_model = config.get("models", {}).get("evaluator", "claude-sonnet-4-6")
+        proposer_model = config.get("models", {}).get("proposer", "claude-opus-4-6")
+        author_model = config.get("models", {}).get("author", "claude-sonnet-4-6")
+        verbose = self.verbose
+        repo = self.repo
+
+        _empty_eval = {"per_turn_observations": [], "pass_classifications": [], "gap_observations": [], "session_narratives": []}
+
+        def real_evaluator(sessions, repo, **kwargs):
+            if not sessions:
+                self._log("No sessions to evaluate — skipping evaluator.")
+                return _empty_eval
+            self._log(f"Running evaluator on {len(sessions)} session(s) (model: {evaluator_model})...")
+            try:
+                result = evaluate(sessions, repo, model=evaluator_model)
+                gaps = result.get("gap_observations", [])
+                self._log(f"Evaluator found {len(gaps)} gap observation(s).")
+                return result
+            except EvaluatorError as e:
+                self._log(f"Evaluator error: {e}")
+                return _empty_eval
+            except (TypeError, Exception) as e:
+                if "api_key" in str(e).lower() or "auth" in str(e).lower():
+                    self._log(f"API key not configured. Set ANTHROPIC_API_KEY environment variable.")
+                    self._log(f"  export ANTHROPIC_API_KEY=sk-ant-...")
+                else:
+                    self._log(f"Evaluator failed: {e}")
+                return _empty_eval
+
+        def real_proposer(eval_output, repo, date_range, **kwargs):
+            # Skip proposer if evaluator produced nothing meaningful
+            obs = eval_output.get("gap_observations", [])
+            narratives = eval_output.get("session_narratives", [])
+            if not obs and not narratives:
+                self._log("No evaluator observations — skipping proposer.")
+                return {"proposals": [], "proposal_ids": []}
+            fn_config = config.get("forced_novelty", {})
+            self._log(f"Running proposer (model: {proposer_model})...")
+            try:
+                result = propose(
+                    evaluator_output=eval_output,
+                    repo=repo,
+                    window=date_range,
+                    model=proposer_model,
+                    forced_novelty_probability=fn_config.get("probability", 0.20),
+                    null_baseline_probability=fn_config.get("null_baseline_probability", 0.01),
+                )
+                count = len(result.get("proposals", []))
+                self._log(f"Proposer generated {count} proposal(s).")
+                return result
+            except ProposerError as e:
+                self._log(f"Proposer error: {e}")
+                return {"proposals": [], "proposal_ids": []}
+
+        def real_author(proposal, repo, **kwargs):
+            pid = proposal.get("proposal_id", "unknown")
+            self._log(f"Running author for proposal {pid} (model: {author_model})...")
+            try:
+                result = author_agent(proposal, repo, model=author_model)
+                self._log(f"  Author result: {result.get('status')}")
+                return result
+            except AuthorError as e:
+                self._log(f"  Author error for {pid}: {e}")
+                return {"status": "author_failed", "author_failure_reason": str(e)}
+
+        def real_human_review(batch):
+            return _human_review_via_markdown(batch, repo, date_range_dict, verbose=verbose)
+
+        self._real_evaluator = real_evaluator
+        self._real_proposer = real_proposer
+        self._real_author = real_author
+        self._real_human_review = real_human_review
+        self._collected_sessions = sessions
+        self._date_range_dict = date_range_dict
 
         run_loop = self._make_run_loop()
         state = run_loop.run()
 
-        if self.verbose:
-            print(
-                f"Run {state.run_id} completed with status: {state.status}",
-                flush=True,
-            )
+        self._log(f"Run {state.run_id} completed with status: {state.status}")
 
         return {
             "run_id": state.run_id,
@@ -238,18 +333,27 @@ class ReviewCommand:
         }
 
     def _make_run_loop(self) -> RunLoop:
-        """Create a RunLoop instance wired to real agents."""
-        date_range_dict = _parse_date_range(self.date_range)
+        """Create a RunLoop instance wired to agents.
+
+        Extracted as a method so tests can mock it to inject canned agents.
+        """
         return RunLoop(
             repo=self.repo,
-            date_range=date_range_dict,
-            sessions=[],
-            evaluator_fn=_noop_evaluator,
-            proposer_fn=_noop_proposer,
-            author_fn=_noop_author,
-            human_review_fn=_noop_human_review,
+            date_range=self._date_range_dict,
+            sessions=self._collected_sessions,
+            evaluator_fn=self._real_evaluator,
+            proposer_fn=self._real_proposer,
+            author_fn=self._real_author,
+            human_review_fn=self._real_human_review,
             resume_run_id=self.resume_run_id,
         )
+
+    def _log(self, msg: str) -> None:
+        """Print a status message to stderr (always visible, doesn't pollute JSON stdout)."""
+        if self.verbose:
+            print(msg, file=sys.stderr, flush=True)
+        else:
+            print(msg, file=sys.stderr, flush=True)
 
 
 class StatusCommand:
@@ -381,20 +485,228 @@ def _parse_date_range(raw: str) -> dict:
     return {"start": start, "end": end}
 
 
-def _noop_evaluator(**kwargs: Any) -> dict:
-    return {"observations": [], "gap_observations": []}
-
-
-def _noop_proposer(**kwargs: Any) -> dict:
-    return {"proposals": [], "proposal_ids": []}
-
-
-def _noop_author(proposal: dict, **kwargs: Any) -> dict:
-    return {"status": "author_failed", "author_failure_reason": "No agent configured"}
-
-
-def _noop_human_review(batch: dict) -> dict:
+def _load_config(repo: Path) -> dict:
+    """Load the meta-harness config.yaml, returning defaults if missing."""
+    config_path = repo / ".meta-harness" / "config.yaml"
+    if config_path.exists():
+        return yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     return {}
+
+
+def _find_session_log_dir(repo: Path) -> Optional[Path]:
+    """Discover the Claude Code session log directory for the given repo.
+
+    Claude Code stores sessions under ~/.claude/projects/<slug>/ where
+    <slug> is the repo path with / replaced by -. Claude Code may also
+    normalize directory names (e.g., underscores to hyphens).
+    """
+    claude_dir = Path.home() / ".claude" / "projects"
+    if not claude_dir.is_dir():
+        return None
+
+    # Build the slug Claude Code uses: absolute path with / replaced by -
+    repo_abs = str(repo.resolve())
+    slug = repo_abs.replace("/", "-")
+
+    candidate = claude_dir / slug
+    if candidate.is_dir():
+        return candidate
+
+    # Try with underscores replaced by hyphens (Claude Code normalization)
+    slug_normalized = slug.replace("_", "-")
+    candidate = claude_dir / slug_normalized
+    if candidate.is_dir():
+        return candidate
+
+    # Fallback: scan for directories whose name contains the repo directory name
+    # Try both the original name and hyphenated variant
+    repo_name = repo.name
+    repo_name_hyphenated = repo_name.replace("_", "-")
+    for entry in sorted(claude_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+        if not entry.is_dir():
+            continue
+        entry_name = entry.name
+        if repo_name in entry_name or repo_name_hyphenated in entry_name:
+            # Check it has JSONL session files (not just subagent dirs)
+            if list(entry.glob("*.jsonl")):
+                return entry
+
+    return None
+
+
+def _collect_sessions(repo: Path, date_range: dict, verbose: bool = False) -> list:
+    """Collect Claude Code sessions in the given date range."""
+    session_dir = _find_session_log_dir(repo)
+    if session_dir is None:
+        if verbose:
+            print(
+                f"Could not find Claude Code session logs for {repo}",
+                file=sys.stderr,
+                flush=True,
+            )
+        return []
+
+    if verbose:
+        print(f"Reading sessions from: {session_dir}", file=sys.stderr, flush=True)
+
+    reader = SessionLogReader(session_dir)
+
+    start_str = date_range.get("start", "")
+    end_str = date_range.get("end", "")
+    try:
+        start_date = date.fromisoformat(start_str)
+        end_date = date.fromisoformat(end_str)
+    except (ValueError, TypeError):
+        # If parsing fails, return all sessions
+        return reader.list_all_sessions()
+
+    sessions = reader.sessions_in_range(start_date, end_date)
+    return sessions
+
+
+def _human_review_via_markdown(
+    batch: dict,
+    repo: Path,
+    date_range: dict,
+    verbose: bool = False,
+) -> dict:
+    """Present the proposal batch as markdown and collect human decisions.
+
+    Writes the batch to a temp file, opens $EDITOR (or prints to stdout),
+    then parses the human's checkbox markings.
+    """
+    proposals = batch.get("proposals", [])
+    if not proposals:
+        return {}
+
+    # Build author_results from the batch for rendering
+    author_results: Dict[str, dict] = {}
+    for proposal in proposals:
+        pid = proposal.get("proposal_id", "")
+        if proposal.get("_author_failed"):
+            author_results[pid] = {
+                "status": "author_failed",
+                "author_failure_reason": proposal.get("_author_failure_reason", ""),
+            }
+        else:
+            author_results[pid] = {"status": "success"}
+
+    run_id = batch.get("run_id", "unknown")
+    md_content = render_proposal_batch_markdown(
+        run_id=run_id,
+        date_range=date_range,
+        proposals=proposals,
+        author_results=author_results,
+    )
+
+    # Show diffs in terminal for proposals with successful authoring
+    for proposal in proposals:
+        pid = proposal.get("proposal_id", "")
+        what = proposal.get("what", {})
+        diff_ref = what.get("diff_reference")
+        if diff_ref and not proposal.get("_author_failed"):
+            branch = f"meta-harness/proposal/{pid}"
+            print(f"\n--- Diff for proposal {pid}: {proposal.get('title', '')} ---", file=sys.stderr, flush=True)
+            try:
+                result = subprocess.run(
+                    ["git", "diff", f"HEAD...{branch}"],
+                    cwd=str(repo),
+                    capture_output=True,
+                    text=True,
+                )
+                if result.stdout:
+                    print(result.stdout, file=sys.stderr, flush=True)
+                else:
+                    print("  (no diff available)", file=sys.stderr, flush=True)
+            except Exception:
+                print("  (could not show diff)", file=sys.stderr, flush=True)
+
+    # Write markdown to a temp file and let the human edit it
+    batch_dir = repo / ".meta-harness" / "runs"
+    batch_dir.mkdir(parents=True, exist_ok=True)
+    batch_path = batch_dir / f"{run_id}-batch.md"
+    batch_path.write_text(md_content, encoding="utf-8")
+
+    editor = os.environ.get("EDITOR", os.environ.get("VISUAL", ""))
+
+    if editor and sys.stdin.isatty():
+        print(
+            f"\nOpening proposal batch for review: {batch_path}",
+            file=sys.stderr,
+            flush=True,
+        )
+        print(
+            "Mark your decisions (Accept/Reject/Defer), save, and close the editor.",
+            file=sys.stderr,
+            flush=True,
+        )
+        subprocess.run([editor, str(batch_path)])
+    else:
+        # No editor or non-interactive — print to stderr and ask for input
+        print("\n" + md_content, file=sys.stderr, flush=True)
+        print(
+            f"\nBatch saved to: {batch_path}",
+            file=sys.stderr,
+            flush=True,
+        )
+        print(
+            "Edit this file to mark your decisions, then re-run with --resume.",
+            file=sys.stderr,
+            flush=True,
+        )
+        # Return all proposals as pending (human hasn't decided yet)
+        return {p.get("proposal_id", ""): "pending" for p in proposals}
+
+    # Parse decisions from the edited markdown
+    edited = batch_path.read_text(encoding="utf-8")
+    decisions = _parse_markdown_decisions(edited, proposals)
+    return decisions
+
+
+def _parse_markdown_decisions(
+    markdown: str, proposals: List[dict]
+) -> Dict[str, str]:
+    """Parse human decisions from the edited proposal batch markdown.
+
+    Looks for checked checkboxes:
+      - [x] Accept  → accepted
+      - [x] Reject  → rejected
+      - [x] Defer   → pending
+    Unmarked proposals are treated as pending (implicitly deferred).
+    """
+    decisions: Dict[str, str] = {}
+
+    # Split by proposal sections
+    sections = re.split(r"^## Proposal \d+ of \d+:", markdown, flags=re.MULTILINE)
+
+    for i, proposal in enumerate(proposals):
+        pid = proposal.get("proposal_id", "")
+
+        # Author-failed proposals always get author_failed
+        if proposal.get("_author_failed"):
+            decisions[pid] = "author_failed"
+            continue
+
+        # Find the matching section (sections[0] is the header, so +1)
+        section_idx = i + 1
+        if section_idx >= len(sections):
+            decisions[pid] = "pending"
+            continue
+
+        section = sections[section_idx]
+
+        # Look for checked checkboxes
+        if re.search(r"- \[x\]\s*Accept", section, re.IGNORECASE):
+            decisions[pid] = "accepted"
+        elif re.search(r"- \[x\]\s*Reject", section, re.IGNORECASE):
+            decisions[pid] = "rejected"
+        elif re.search(r"- \[x\]\s*Defer", section, re.IGNORECASE):
+            decisions[pid] = "pending"
+        else:
+            # No checkbox marked — implicit defer
+            decisions[pid] = "pending"
+
+    return decisions
 
 
 if __name__ == "__main__":
