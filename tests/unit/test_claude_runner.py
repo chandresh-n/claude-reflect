@@ -26,6 +26,11 @@ def test_invoke_claude_returns_text(mock_run: MagicMock) -> None:
     )
     result = invoke_claude(system_prompt="You are a helper.", user_prompt="Say hello")
     assert result == "hello"
+    # User prompt should be passed via stdin (input kwarg), not as a CLI arg
+    call_kwargs = mock_run.call_args
+    assert call_kwargs.kwargs.get("input") == "Say hello"
+    cmd = call_kwargs[0][0]
+    assert "Say hello" not in cmd, "user_prompt should not be a CLI arg"
 
 
 @patch("meta_harness.agents.claude_runner.subprocess.run")
