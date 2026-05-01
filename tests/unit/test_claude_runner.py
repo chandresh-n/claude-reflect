@@ -370,3 +370,60 @@ def test_proposer_uses_runner(mock_invoke: MagicMock, tmp_path: Path) -> None:
     assert "import anthropic" not in source, (
         "proposer.py must not import anthropic directly"
     )
+
+
+# ---------------------------------------------------------------------------
+# T7: No anthropic import anywhere in agent source files
+# ---------------------------------------------------------------------------
+
+
+def test_no_anthropic_import() -> None:
+    """Scan all agent source files for 'import anthropic'; assert none found."""
+    import ast
+    from pathlib import Path
+
+    agent_dir = Path(__file__).resolve().parents[2] / "src" / "meta_harness" / "agents"
+    agent_files = sorted(agent_dir.glob("*.py"))
+    assert agent_files, f"No .py files found in {agent_dir}"
+
+    violations: list[str] = []
+    for py_file in agent_files:
+        source = py_file.read_text()
+        tree = ast.parse(source, filename=str(py_file))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name == "anthropic" or alias.name.startswith("anthropic."):
+                        violations.append(f"{py_file.name}: import {alias.name}")
+            elif isinstance(node, ast.ImportFrom):
+                if node.module and (
+                    node.module == "anthropic" or node.module.startswith("anthropic.")
+                ):
+                    violations.append(f"{py_file.name}: from {node.module} import ...")
+
+    assert not violations, (
+        f"Agent files must not import anthropic SDK directly:\n"
+        + "\n".join(f"  - {v}" for v in violations)
+    )
+
+
+def test_no_anthropic_in_project_dependencies() -> None:
+    """The project dependency list must not include 'anthropic'."""
+    from pathlib import Path
+
+    project_root = Path(__file__).resolve().parents[2]
+    pyproject = project_root / "pyproject.toml"
+    assert pyproject.exists(), f"pyproject.toml not found at {pyproject}"
+
+    content = pyproject.read_text()
+    # Parse the dependencies list; anthropic should not appear
+    import re
+
+    # Match the dependencies array in pyproject.toml
+    dep_match = re.search(r"dependencies\s*=\s*\[(.*?)\]", content, re.DOTALL)
+    assert dep_match, "Could not find dependencies in pyproject.toml"
+    deps_text = dep_match.group(1)
+
+    assert "anthropic" not in deps_text.lower(), (
+        f"'anthropic' should not be in project dependencies:\n{deps_text}"
+    )
