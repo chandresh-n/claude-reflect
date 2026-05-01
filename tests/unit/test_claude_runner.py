@@ -66,13 +66,27 @@ def test_error_handling(mock_run: MagicMock) -> None:
 
 @patch("meta_harness.agents.claude_runner.subprocess.run")
 def test_nonzero_exit_raises(mock_run: MagicMock) -> None:
-    """Asserts ClaudeRunnerError is raised on CalledProcessError / non-zero exit."""
+    """Asserts ClaudeRunnerError is raised on non-zero exit with non-JSON stderr."""
     mock_run.return_value = MagicMock(
         returncode=1,
-        stdout="",
+        stdout="not json",
         stderr="some error",
     )
-    with pytest.raises(ClaudeRunnerError):
+    with pytest.raises(ClaudeRunnerError, match="exited with code 1"):
+        invoke_claude(system_prompt="sys", user_prompt="usr")
+
+
+@patch("meta_harness.agents.claude_runner.subprocess.run")
+def test_nonzero_exit_extracts_error_from_stdout_json(mock_run: MagicMock) -> None:
+    """When exit code is 1 but stdout has JSON with is_error, extract the message."""
+    mock_run.return_value = MagicMock(
+        returncode=1,
+        stdout=json.dumps(
+            {"type": "result", "is_error": True, "result": "Invalid API key"}
+        ),
+        stderr="",
+    )
+    with pytest.raises(ClaudeRunnerError, match="Invalid API key"):
         invoke_claude(system_prompt="sys", user_prompt="usr")
 
 

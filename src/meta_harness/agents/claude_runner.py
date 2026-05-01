@@ -74,20 +74,21 @@ def invoke_claude(
     finally:
         os.unlink(sp_path)
 
-    if result.returncode != 0:
-        raise ClaudeRunnerError(
-            f"claude -p exited with code {result.returncode}: {result.stderr}"
-        )
-
-    # Parse the JSON envelope
+    # Parse the JSON envelope (claude -p --output-format json puts errors
+    # in stdout even on non-zero exit, so always try to parse it first)
     try:
         response = json.loads(result.stdout)
-    except json.JSONDecodeError as e:
+    except json.JSONDecodeError:
+        # stdout isn't JSON — fall back to returncode + stderr
+        if result.returncode != 0:
+            raise ClaudeRunnerError(
+                f"claude -p exited with code {result.returncode}: {result.stderr}"
+            )
         raise ClaudeRunnerError(
             f"Failed to parse claude output as JSON: {result.stdout[:500]}"
-        ) from e
+        )
 
-    if response.get("is_error"):
+    if response.get("is_error") or result.returncode != 0:
         raise ClaudeRunnerError(
             f"Claude returned an error: {response.get('result', 'unknown error')}"
         )
