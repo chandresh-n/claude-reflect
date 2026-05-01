@@ -242,32 +242,75 @@ def _write_gap_side_effects(
     return updated_observations
 
 
-def evaluate(
-    sessions: List[Session],
+# Rough estimate: ~4 chars per token.  Leave headroom for system prompt
+# and response tokens within a 200K context window.
+_MAX_PROMPT_CHARS = 400_000  # ~100K tokens for session text
+
+
+def _estimate_session_chars(session: "Session") -> int:
+    """Estimate the character count for a formatted session."""
+    count = len(session.session_id) + 80  # header lines
+    for turn in session.turns:
+        count += len(turn.human_input or "") + len(turn.assistant_response or "")
+        count += 100  # metadata lines per turn
+    return count
+
+
+def _split_into_batches(
+    sessions: List["Session"], max_chars: int = _MAX_PROMPT_CHARS
+) -> List[List["Session"]]:
+    """Split sessions into batches that fit within the prompt size limit."""
+    batches: List[List["Session"]] = []
+    current_batch: List["Session"] = []
+    current_chars = 0
+
+    for session in sessions:
+        session_chars = _estimate_session_chars(session)
+        if current_batch and current_chars + session_chars > max_chars:
+            batches.append(current_batch)
+            current_batch = []
+            current_chars = 0
+        current_batch.append(session)
+        current_chars += session_chars
+
+    if current_batch:
+        batches.append(current_batch)
+
+    return batches
+
+
+def _merge_evaluator_outputs(outputs: List[dict]) -> dict:
+    """Merge multiple evaluator outputs from batched runs."""
+    merged = {
+        "per_turn_observations": [],
+        "pass_classifications": [],
+        "gap_observations": [],
+        "session_narratives": [],
+    }
+    for output in outputs:
+        merged["per_turn_observations"].extend(
+            output.get("per_turn_observations", [])
+        )
+        merged["pass_classifications"].extend(
+            output.get("pass_classifications", [])
+        )
+        merged["gap_observations"].extend(
+            output.get("gap_observations", [])
+        )
+        merged["session_narratives"].extend(
+            output.get("session_narratives", [])
+        )
+    return merged
+
+
+def _evaluate_batch(
+    sessions: List["Session"],
     repo: Path,
-    model: str = "claude-sonnet-4-6",
-    write_gap_records: bool = True,
+    model: str,
+    existing_gaps: str,
 ) -> dict:
-    """
-    Run the evaluator agent on the given sessions.
-
-    Args:
-        sessions: List of Session objects to evaluate.
-        repo: Root of the target git repository (for gap record access).
-        model: Anthropic model to use for evaluation.
-        write_gap_records: Whether to write gap record side effects.
-
-    Returns:
-        Evaluator output dict matching the evaluator-output schema.
-
-    Raises:
-        EvaluatorError: If the agent fails to produce valid output.
-    """
-    if not sessions:
-        raise EvaluatorError("No sessions provided for evaluation")
-
+    """Run the evaluator on a single batch of sessions."""
     session_text = _format_sessions_for_prompt(sessions)
-    existing_gaps = _format_existing_gaps(repo)
 
     user_prompt = (
         f"Evaluate the following session logs. Produce a complete evaluator "
@@ -285,7 +328,48 @@ def evaluate(
     except ClaudeRunnerError as e:
         raise EvaluatorError(f"Claude invocation failed: {e}") from e
 
-    output = _parse_evaluator_output(raw_text)
+    return _parse_evaluator_output(raw_text)
+
+
+def evaluate(
+    sessions: List[Session],
+    repo: Path,
+    model: str = "claude-sonnet-4-6",
+    write_gap_records: bool = True,
+) -> dict:
+    """
+    Run the evaluator agent on the given sessions.
+
+    Automatically batches sessions if the combined prompt would exceed
+    the context window, running separate evaluator calls and merging
+    the results.
+
+    Args:
+        sessions: List of Session objects to evaluate.
+        repo: Root of the target git repository (for gap record access).
+        model: Anthropic model to use for evaluation.
+        write_gap_records: Whether to write gap record side effects.
+
+    Returns:
+        Evaluator output dict matching the evaluator-output schema.
+
+    Raises:
+        EvaluatorError: If the agent fails to produce valid output.
+    """
+    if not sessions:
+        raise EvaluatorError("No sessions provided for evaluation")
+
+    existing_gaps = _format_existing_gaps(repo)
+    batches = _split_into_batches(sessions)
+
+    if len(batches) == 1:
+        output = _evaluate_batch(batches[0], repo, model, existing_gaps)
+    else:
+        batch_outputs = []
+        for i, batch in enumerate(batches):
+            batch_output = _evaluate_batch(batch, repo, model, existing_gaps)
+            batch_outputs.append(batch_output)
+        output = _merge_evaluator_outputs(batch_outputs)
 
     # Write gap record side effects
     if write_gap_records and output.get("gap_observations"):
