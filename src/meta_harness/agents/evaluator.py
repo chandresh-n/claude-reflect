@@ -20,8 +20,7 @@ import json
 from pathlib import Path
 from typing import Any, List, Optional
 
-import anthropic
-
+from meta_harness.agents.claude_runner import ClaudeRunnerError, invoke_claude
 from meta_harness.storage.gap_record import (
     create_gap_record,
     read_gap_record,
@@ -267,8 +266,6 @@ def evaluate(
     if not sessions:
         raise EvaluatorError("No sessions provided for evaluation")
 
-    client = anthropic.Anthropic()
-
     session_text = _format_sessions_for_prompt(sessions)
     existing_gaps = _format_existing_gaps(repo)
 
@@ -279,18 +276,14 @@ def evaluate(
         f"## Session logs to evaluate\n\n{session_text}"
     )
 
-    response = client.messages.create(
-        model=model,
-        max_tokens=16384,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_prompt}],
-    )
-
-    # Extract JSON from response
-    raw_text = ""
-    for block in response.content:
-        if block.type == "text":
-            raw_text += block.text
+    try:
+        raw_text = invoke_claude(
+            system_prompt=SYSTEM_PROMPT,
+            user_prompt=user_prompt,
+            model=model,
+        )
+    except ClaudeRunnerError as e:
+        raise EvaluatorError(f"Claude invocation failed: {e}") from e
 
     output = _parse_evaluator_output(raw_text)
 

@@ -274,3 +274,99 @@ def test_evaluator_uses_runner(mock_invoke: MagicMock) -> None:
     assert "import anthropic" not in source, (
         "evaluator.py must not import anthropic directly"
     )
+
+
+# ---------------------------------------------------------------------------
+# T3: Proposer uses claude_runner instead of direct Anthropic SDK
+# ---------------------------------------------------------------------------
+
+
+@patch("meta_harness.agents.claude_runner.invoke_claude")
+def test_proposer_uses_runner(mock_invoke: MagicMock, tmp_path: Path) -> None:
+    """Proposer's propose() must call invoke_claude instead of anthropic SDK directly."""
+    import importlib
+    import inspect
+
+    from meta_harness.agents.proposer import propose
+
+    # Canned proposer JSON that invoke_claude will return
+    canned_batch = {
+        "batch_id": "batch-test-001",
+        "run_id": "run-test-001",
+        "created_at": "2026-04-29T10:00:00Z",
+        "window": {"start": "2026-04-22", "end": "2026-04-29"},
+        "proposal_ids": ["prop-test-001"],
+        "batch_narrative": "One proposal targeting a tool-call-loop gap.",
+        "contains_forced_novelty": False,
+        "proposals": [
+            {
+                "proposal_id": "prop-test-001",
+                "batch_id": "batch-test-001",
+                "run_id": "run-test-001",
+                "created_at": "2026-04-29T10:00:00Z",
+                "title": "Add project file map to CLAUDE.md",
+                "why": {
+                    "cited_gaps": [
+                        {"gap_id": "gap-001", "addressing_note": "Repeated loops."}
+                    ],
+                    "cited_sessions": [
+                        {"session_id": "s1", "turn_range": {"start": 3, "end": 5}}
+                    ],
+                    "cited_prior_decisions": [],
+                    "prose_summary": "Tool-call loops observed repeatedly.",
+                },
+                "what": {
+                    "diff_reference": None,
+                    "files_touched": None,
+                    "short_description": "Add file map to CLAUDE.md.",
+                },
+                "how": "Add a structured section mapping tasks to file paths.",
+                "prediction": "Fewer redundant search turns.",
+                "structural_tags": {
+                    "change_type": "modification",
+                    "surface": "claude_md",
+                    "novelty_status": "normal",
+                },
+                "authoring_addendum": {
+                    "actions": [{"type": "modify", "target_path": ".claude/CLAUDE.md"}],
+                    "purpose": "Add project file map.",
+                    "behavior_constraints": ["Must not exceed 40 lines."],
+                },
+            }
+        ],
+    }
+
+    mock_invoke.return_value = json.dumps(canned_batch)
+
+    evaluator_output = {"summary": "test evaluator output"}
+    result = propose(
+        evaluator_output=evaluator_output,
+        repo=tmp_path,
+        run_id="run-test-001",
+        batch_id="batch-test-001",
+        write_gap_updates=False,
+    )
+
+    # invoke_claude must have been called (not anthropic SDK)
+    mock_invoke.assert_called_once()
+
+    # Check call arguments
+    call_kwargs = mock_invoke.call_args
+    assert "system_prompt" in call_kwargs.kwargs
+    assert "user_prompt" in call_kwargs.kwargs
+
+    # Result must have expected batch keys
+    expected_keys = {
+        "batch_id", "run_id", "created_at", "window",
+        "proposal_ids", "batch_narrative", "contains_forced_novelty", "proposals",
+    }
+    assert expected_keys <= set(result.keys())
+    assert len(result["proposals"]) == 1
+    assert result["proposals"][0]["proposal_id"] == "prop-test-001"
+
+    # Assert anthropic is NOT imported at runtime in proposer module
+    proposer_mod = importlib.import_module("meta_harness.agents.proposer")
+    source = inspect.getsource(proposer_mod)
+    assert "import anthropic" not in source, (
+        "proposer.py must not import anthropic directly"
+    )
