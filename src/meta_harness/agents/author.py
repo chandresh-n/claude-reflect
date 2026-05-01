@@ -23,7 +23,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import anthropic
+from meta_harness.agents.claude_runner import ClaudeRunnerError, invoke_claude
 
 
 # ---------------------------------------------------------------------------
@@ -432,20 +432,15 @@ def author(
     # Format prompt context
     context = _format_intent_for_prompt(intent, repo)
 
-    # Invoke the author agent (fresh context)
-    client = anthropic.Anthropic()
-    response = client.messages.create(
-        model=model,
-        max_tokens=16384,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": context}],
-    )
-
-    # Extract text from response
-    raw_text = ""
-    for block in response.content:
-        if block.type == "text":
-            raw_text += block.text
+    # Invoke the author agent (fresh context via claude CLI)
+    try:
+        raw_text = invoke_claude(
+            system_prompt=SYSTEM_PROMPT,
+            user_prompt=context,
+            model=model,
+        )
+    except ClaudeRunnerError as e:
+        raise AuthorError(f"Claude invocation failed: {e}") from e
 
     # Parse the output
     agent_output = _parse_author_output(raw_text)
