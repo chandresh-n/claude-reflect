@@ -212,8 +212,15 @@ class TestExactlyOneActive:
     def test_superseded_entry_is_no_longer_active(self, tmp_path):
         # Create first entry
         create_archive_entry(base_dir=tmp_path, **_make_entry_kwargs())
-        # Create second entry
+        # Supersede the first before creating the second (invariant: exactly one active)
         ts2 = datetime(2024, 2, 1, 0, 0, 0, tzinfo=timezone.utc)
+        supersede_archive_entry(
+            entry_id="entry-001",
+            superseded_by_decision="decision-002",
+            end_time=ts2,
+            base_dir=tmp_path,
+        )
+        # Now create second entry
         create_archive_entry(
             base_dir=tmp_path,
             **_make_entry_kwargs(
@@ -221,13 +228,6 @@ class TestExactlyOneActive:
                 produced_by_decision="decision-002",
                 produced_at=ts2,
             ),
-        )
-        # Supersede the first via the second
-        supersede_archive_entry(
-            entry_id="entry-001",
-            superseded_by_decision="decision-002",
-            end_time=ts2,
-            base_dir=tmp_path,
         )
         old = read_archive_entry("entry-001", base_dir=tmp_path)
         assert old["superseded_by"] == "decision-002"
