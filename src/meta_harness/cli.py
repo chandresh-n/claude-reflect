@@ -247,7 +247,7 @@ class ReviewCommand:
         self._log(f"Found {len(sessions)} session(s) in range.")
 
         # Build agent wrappers that use the real implementations
-        evaluator_model = config.get("models", {}).get("evaluator", "claude-sonnet-4-6")
+        evaluator_model = config.get("models", {}).get("evaluator", "claude-opus-4-6")
         proposer_model = config.get("models", {}).get("proposer", "claude-opus-4-6")
         author_model = config.get("models", {}).get("author", "claude-sonnet-4-6")
         verbose = self.verbose

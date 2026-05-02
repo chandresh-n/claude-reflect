@@ -411,7 +411,7 @@ def _evaluate_batch(
 def evaluate(
     sessions: List[Session],
     repo: Path,
-    model: str = "claude-sonnet-4-6",
+    model: str = "claude-opus-4-6",
     write_gap_records: bool = True,
 ) -> dict:
     """
@@ -474,7 +474,7 @@ def evaluate(
 def evaluate_from_jsonl(
     session_paths: List[Path],
     repo: Path,
-    model: str = "claude-sonnet-4-6",
+    model: str = "claude-opus-4-6",
     write_gap_records: bool = True,
 ) -> dict:
     """
