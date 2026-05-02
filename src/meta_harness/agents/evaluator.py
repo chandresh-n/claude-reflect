@@ -417,30 +417,45 @@ def _parse_evaluator_output(raw_text: str) -> dict:
     """
     Parse the evaluator's raw text response into a structured dict.
 
-    Handles cases where the LLM wraps JSON in markdown code fences.
+    Handles cases where the LLM wraps JSON in markdown code fences,
+    and cases where preamble text appears before the code fence.
     """
     text = raw_text.strip()
 
-    # Strip markdown code fences if present
-    if text.startswith("```"):
-        lines = text.split("\n")
-        # Remove first line (```json or ```)
-        lines = lines[1:]
-        # Remove last line (```)
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        text = "\n".join(lines)
-
+    # Try direct JSON parse first
     try:
         output = json.loads(text)
-    except json.JSONDecodeError as e:
-        raise EvaluatorError(
-            f"Failed to parse evaluator output as JSON: {e}\n"
-            f"Raw text (first 500 chars): {raw_text[:500]}"
-        ) from e
+        _validate_output_structure(output)
+        return output
+    except (json.JSONDecodeError, EvaluatorError):
+        pass
 
-    _validate_output_structure(output)
-    return output
+    # Extract JSON from markdown code fence (may have preamble text before it)
+    import re
+    fence_match = re.search(r"```(?:json)?\s*\n(.*?)\n```", text, re.DOTALL)
+    if fence_match:
+        try:
+            output = json.loads(fence_match.group(1))
+            _validate_output_structure(output)
+            return output
+        except json.JSONDecodeError:
+            pass
+
+    # Last resort: find the first { and last } and try to parse that
+    first_brace = text.find("{")
+    last_brace = text.rfind("}")
+    if first_brace != -1 and last_brace > first_brace:
+        try:
+            output = json.loads(text[first_brace:last_brace + 1])
+            _validate_output_structure(output)
+            return output
+        except json.JSONDecodeError:
+            pass
+
+    raise EvaluatorError(
+        f"Failed to parse evaluator output as JSON.\n"
+        f"Raw text (first 500 chars): {raw_text[:500]}"
+    )
 
 
 def _validate_output_structure(output: dict) -> None:
