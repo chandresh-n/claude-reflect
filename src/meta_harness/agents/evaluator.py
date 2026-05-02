@@ -395,6 +395,16 @@ def _evaluate_batch(
         f"## Session logs to evaluate\n\n{session_text}"
     )
 
+    # Log prompt details
+    total_turns = sum(len(c["session"].turns) for c in chunks)
+    session_ids = set(c["session"].session_id for c in chunks)
+    print(
+        f"  prompt: {len(user_prompt):,} chars (~{len(user_prompt)//4:,} tokens), "
+        f"{total_turns} turns across {len(session_ids)} session(s), "
+        f"model={model}",
+        file=sys.stderr, flush=True,
+    )
+
     try:
         raw_text = invoke_claude(
             system_prompt=SYSTEM_PROMPT,
@@ -404,6 +414,12 @@ def _evaluate_batch(
         )
     except ClaudeRunnerError as e:
         raise EvaluatorError(f"Claude invocation failed: {e}") from e
+
+    # Log output details
+    print(
+        f"  output: {len(raw_text):,} chars (~{len(raw_text)//4:,} tokens)",
+        file=sys.stderr, flush=True,
+    )
 
     return _parse_evaluator_output(raw_text)
 

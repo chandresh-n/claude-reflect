@@ -158,31 +158,72 @@ def invoke_claude(
 
                 event_type = event.get("type", "")
 
-                if event_type == "assistant":
+                if event_type == "system":
+                    # Init event — show model and session info
+                    evt_model = event.get("model", "")
+                    session_id = event.get("session_id", "")
+                    if evt_model:
+                        print(
+                            f"{prefix} model={evt_model}, "
+                            f"session={session_id[:12]}...",
+                            file=sys.stderr, flush=True,
+                        )
+
+                elif event_type == "assistant":
                     msg = event.get("message", {})
                     usage = msg.get("usage", {})
                     output_tokens = usage.get("output_tokens", 0)
+                    input_tokens = usage.get("input_tokens", 0)
+                    cache_read = usage.get("cache_read_input_tokens", 0)
+                    cache_create = usage.get("cache_creation_input_tokens", 0)
+
+                    # Show token progress
                     if output_tokens > token_count:
                         token_count = output_tokens
-                        print(
-                            f"\r{prefix} {int(elapsed)}s elapsed, "
-                            f"{token_count} output tokens...",
-                            end="", file=sys.stderr, flush=True,
-                        )
+                        if input_tokens and token_count <= 1:
+                            # First output — show input token breakdown
+                            print(
+                                f"\r{prefix} input={input_tokens:,} "
+                                f"(cache_read={cache_read:,}, "
+                                f"cache_create={cache_create:,}), "
+                                f"generating...",
+                                end="", file=sys.stderr, flush=True,
+                            )
+                        else:
+                            print(
+                                f"\r{prefix} {int(elapsed)}s, "
+                                f"{token_count:,} output tokens...",
+                                end="", file=sys.stderr, flush=True,
+                            )
+
+                    # Stream text content to stderr
+                    content = msg.get("content", [])
+                    if isinstance(content, list):
+                        for block in content:
+                            if isinstance(block, dict):
+                                if block.get("type") == "text":
+                                    text_content = block.get("text", "")
+                                    if text_content:
+                                        # Clear the progress line, print text, restore
+                                        print(
+                                            f"\r{' ' * 80}\r",
+                                            end="", file=sys.stderr, flush=True,
+                                        )
+                                        sys.stderr.write(text_content)
+                                        sys.stderr.flush()
 
                 elif event_type == "result":
                     result_event = event
-                    if token_count > 0:
-                        print(
-                            f"\r{prefix} done in {int(elapsed)}s, "
-                            f"{token_count} output tokens.   ",
-                            file=sys.stderr, flush=True,
-                        )
-                    else:
-                        print(
-                            f"\r{prefix} done in {int(elapsed)}s.   ",
-                            file=sys.stderr, flush=True,
-                        )
+                    result_usage = result_event.get("usage", {})
+                    total_input = result_usage.get("input_tokens", 0)
+                    total_output = result_usage.get("output_tokens", 0)
+                    cost = result_event.get("total_cost_usd", 0)
+                    print(
+                        f"\n{prefix} done in {int(elapsed)}s | "
+                        f"in={total_input:,} out={total_output:,} "
+                        f"cost=${cost:.4f}",
+                        file=sys.stderr, flush=True,
+                    )
 
     finally:
         proc.stdout.close()
