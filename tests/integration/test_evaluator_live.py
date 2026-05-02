@@ -263,3 +263,189 @@ def test_evaluate_full_pipeline():
             elapsed = time.monotonic() - start
             print(f"\nEvaluatorError ({elapsed:.1f}s): {e}", file=sys.stderr)
             pytest.fail(f"evaluate() failed: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Test: real session from disk (not mocked)
+# ---------------------------------------------------------------------------
+
+_REAL_SESSION_DIR = Path.home() / ".claude" / "projects" / "-Users-chandresh-Documents-Slop-meta-harness"
+
+
+def _find_real_session(min_turns: int = 2, max_turns: int = 20):
+    """Find a real session file with a manageable number of turns."""
+    from meta_harness.storage.session_logs import SessionLogReader
+    from datetime import date, timedelta
+
+    if not _REAL_SESSION_DIR.exists():
+        pytest.skip(f"Session directory not found: {_REAL_SESSION_DIR}")
+
+    reader = SessionLogReader(_REAL_SESSION_DIR)
+    end = date.today()
+    start = end - timedelta(days=7)
+    sessions = reader.sessions_in_range(start, end)
+
+    # Find sessions with a reasonable number of turns
+    candidates = [s for s in sessions if min_turns <= len(s.turns) <= max_turns]
+    if not candidates:
+        pytest.skip(f"No sessions found with {min_turns}-{max_turns} turns")
+
+    return candidates[0]
+
+
+def _find_big_session(min_turns: int = 100):
+    """Find the biggest real session to test limits."""
+    from meta_harness.storage.session_logs import SessionLogReader
+    from datetime import date, timedelta
+
+    if not _REAL_SESSION_DIR.exists():
+        pytest.skip(f"Session directory not found: {_REAL_SESSION_DIR}")
+
+    reader = SessionLogReader(_REAL_SESSION_DIR)
+    end = date.today()
+    start = end - timedelta(days=7)
+    sessions = reader.sessions_in_range(start, end)
+
+    candidates = [s for s in sessions if len(s.turns) >= min_turns]
+    if not candidates:
+        pytest.skip(f"No sessions found with {min_turns}+ turns")
+
+    return max(candidates, key=lambda s: len(s.turns))
+
+
+def test_evaluate_real_small_session():
+    """Run evaluate() on a real session with few turns (2-20).
+
+    This tests with ACTUAL session data, not mock fixtures.
+    """
+    from meta_harness.agents.evaluator import (
+        evaluate, EvaluatorError, _format_sessions_for_prompt, SYSTEM_PROMPT,
+    )
+    from meta_harness.agents.claude_runner import _compute_timeout
+
+    session = _find_real_session(min_turns=2, max_turns=20)
+    text = _format_sessions_for_prompt([session])
+
+    print(f"\n=== TEST: real small session ===", file=sys.stderr)
+    print(f"Session: {session.session_id}", file=sys.stderr)
+    print(f"Turns: {len(session.turns)}", file=sys.stderr)
+    print(f"Prompt chars: {len(text):,}", file=sys.stderr)
+    print(f"Estimated tokens: ~{len(text) // 4:,}", file=sys.stderr)
+
+    user_prompt = f"Evaluate...\n\n{text}"
+    timeout = _compute_timeout(SYSTEM_PROMPT, user_prompt)
+    print(f"Computed timeout: {timeout}s ({timeout // 60}m)", file=sys.stderr)
+
+    start = time.monotonic()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        try:
+            result = evaluate(
+                sessions=[session],
+                repo=Path(tmpdir),
+                model="claude-sonnet-4-6",
+                write_gap_records=False,
+            )
+            elapsed = time.monotonic() - start
+            print(f"\nSUCCESS in {elapsed:.1f}s", file=sys.stderr)
+            print(f"per_turn_observations: {len(result['per_turn_observations'])}", file=sys.stderr)
+            print(f"pass_classifications: {len(result['pass_classifications'])}", file=sys.stderr)
+            print(f"gap_observations: {len(result['gap_observations'])}", file=sys.stderr)
+            print(f"session_narratives: {len(result['session_narratives'])}", file=sys.stderr)
+
+            assert len(result["per_turn_observations"]) == len(session.turns)
+            assert len(result["session_narratives"]) == 1
+
+        except EvaluatorError as e:
+            elapsed = time.monotonic() - start
+            print(f"\nFAILED ({elapsed:.1f}s): {e}", file=sys.stderr)
+            pytest.fail(f"evaluate() failed: {e}")
+
+
+def test_diagnose_big_session():
+    """Diagnose WHY big sessions fail — is it prompt size, output size, or timeout?
+
+    This test does NOT call the evaluator. It just measures the problem.
+    """
+    from meta_harness.agents.evaluator import (
+        _format_sessions_for_prompt, SYSTEM_PROMPT, _split_into_batches,
+    )
+    from meta_harness.agents.claude_runner import _compute_timeout
+
+    session = _find_big_session()
+    text = _format_sessions_for_prompt([session])
+
+    print(f"\n=== DIAGNOSIS: big session ===", file=sys.stderr)
+    print(f"Session: {session.session_id}", file=sys.stderr)
+    print(f"Turns: {len(session.turns)}", file=sys.stderr)
+    print(f"Prompt chars: {len(text):,}", file=sys.stderr)
+    print(f"Estimated input tokens: ~{len(text) // 4:,}", file=sys.stderr)
+
+    # Sonnet context: 200K tokens, max output: 64K tokens (but realistically 16K-32K)
+    input_tokens = len(text) // 4
+    system_tokens = len(SYSTEM_PROMPT) // 4
+    total_input = input_tokens + system_tokens
+    remaining_for_output = 200_000 - total_input
+
+    print(f"\nContext budget (Sonnet 200K):", file=sys.stderr)
+    print(f"  System prompt: ~{system_tokens:,} tokens", file=sys.stderr)
+    print(f"  Session text:  ~{input_tokens:,} tokens", file=sys.stderr)
+    print(f"  Total input:   ~{total_input:,} tokens", file=sys.stderr)
+    print(f"  Remaining:     ~{remaining_for_output:,} tokens for output", file=sys.stderr)
+
+    # Expected output size
+    obs_per_turn = 400  # chars per per_turn_observation
+    expected_output_chars = len(session.turns) * obs_per_turn + 5000  # + overhead
+    expected_output_tokens = expected_output_chars // 4
+    print(f"\nExpected output:", file=sys.stderr)
+    print(f"  {len(session.turns)} turns * ~{obs_per_turn} chars = ~{expected_output_chars:,} chars", file=sys.stderr)
+    print(f"  Estimated output tokens: ~{expected_output_tokens:,}", file=sys.stderr)
+
+    fits = expected_output_tokens < remaining_for_output
+    print(f"\n  Output fits in remaining context? {'YES' if fits else 'NO'}", file=sys.stderr)
+    if not fits:
+        print(f"  OVERFLOW by ~{expected_output_tokens - remaining_for_output:,} tokens", file=sys.stderr)
+
+    # Batching check
+    batches = _split_into_batches([session])
+    print(f"\nBatching:", file=sys.stderr)
+    print(f"  _split_into_batches produces {len(batches)} batch(es)", file=sys.stderr)
+    print(f"  Batch limit: 400,000 chars", file=sys.stderr)
+    print(f"  Session size: {len(text):,} chars", file=sys.stderr)
+    if len(text) < 400_000:
+        print(f"  -> Session fits in ONE batch (not split)", file=sys.stderr)
+        print(f"  -> But this is a SINGLE session — can't split across batches anyway", file=sys.stderr)
+
+    # Timeout
+    user_prompt = f"Evaluate...\n\n{text}"
+    timeout = _compute_timeout(SYSTEM_PROMPT, user_prompt)
+    print(f"\nTimeout: {timeout}s ({timeout // 60}m {timeout % 60}s)", file=sys.stderr)
+
+    # Time estimate: ~1 token/s for output generation
+    est_time = expected_output_tokens  # ~1 tok/s
+    print(f"Estimated generation time at 1 tok/s: {est_time}s ({est_time // 60}m)", file=sys.stderr)
+    if est_time > timeout:
+        print(f"  -> WILL TIMEOUT: generation ({est_time}s) > timeout ({timeout}s)", file=sys.stderr)
+
+    # Per-turn size analysis
+    turn_sizes = []
+    for turn in session.turns:
+        h = len(turn.human_input or "")
+        a = len(turn.assistant_response or "")
+        turn_sizes.append(h + a)
+
+    print(f"\nPer-turn sizes:", file=sys.stderr)
+    print(f"  Min: {min(turn_sizes):,} chars", file=sys.stderr)
+    print(f"  Max: {max(turn_sizes):,} chars", file=sys.stderr)
+    print(f"  Avg: {sum(turn_sizes) // len(turn_sizes):,} chars", file=sys.stderr)
+    print(f"  Median: {sorted(turn_sizes)[len(turn_sizes)//2]:,} chars", file=sys.stderr)
+
+    # Suggested fix
+    print(f"\n=== SUGGESTED FIX ===", file=sys.stderr)
+    print(f"Truncate assistant_response per turn to ~500 chars.", file=sys.stderr)
+    truncated = 0
+    for turn in session.turns:
+        h = len(turn.human_input or "")
+        a = min(len(turn.assistant_response or ""), 500)
+        truncated += h + a + 100
+    print(f"Truncated prompt would be ~{truncated:,} chars (~{truncated // 4:,} tokens)", file=sys.stderr)
+    print(f"Reduction: {len(text):,} -> {truncated:,} ({100 - truncated * 100 // len(text)}% smaller)", file=sys.stderr)

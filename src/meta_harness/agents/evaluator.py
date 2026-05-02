@@ -141,7 +141,9 @@ when no existing kind honestly applies.
 """
 
 
-def _format_sessions_for_prompt(sessions: List[Session]) -> str:
+def _format_sessions_for_prompt(
+    sessions: List[Session], turn_offset: int = 0
+) -> str:
     """Format session data as a string for the evaluator prompt."""
     parts = []
     for session in sessions:
@@ -149,9 +151,11 @@ def _format_sessions_for_prompt(sessions: List[Session]) -> str:
         parts.append(f"Start: {session.start_time.isoformat()}")
         parts.append(f"End: {session.end_time.isoformat()}")
         parts.append(f"Turns: {len(session.turns)}")
+        if turn_offset > 0:
+            parts.append(f"Turn offset: {turn_offset} (turn indices below are absolute)")
         parts.append("")
         for i, turn in enumerate(session.turns):
-            parts.append(f"### Turn {i}")
+            parts.append(f"### Turn {turn_offset + i}")
             if turn.human_input:
                 parts.append(f"Human: {turn.human_input}")
             if turn.assistant_response:
@@ -247,6 +251,11 @@ def _write_gap_side_effects(
 # and response tokens within a 200K context window.
 _MAX_PROMPT_CHARS = 400_000  # ~100K tokens for session text
 
+# Max turns per evaluator call.  289 turns = ~30K output tokens which
+# takes hundreds of minutes to generate.  50 turns = ~5K output tokens
+# which finishes in a few minutes.
+_MAX_TURNS_PER_CHUNK = 50
+
 
 def _estimate_session_chars(session: "Session") -> int:
     """Estimate the character count for a formatted session."""
@@ -257,22 +266,80 @@ def _estimate_session_chars(session: "Session") -> int:
     return count
 
 
+def _chunk_large_sessions(sessions: List["Session"]) -> List[dict]:
+    """Split sessions with too many turns into smaller chunks.
+
+    Returns a list of dicts with:
+      - "session": the Session object (possibly a subset of turns)
+      - "turn_offset": the starting turn index in the original session
+      - "total_turns": the total number of turns in the original session
+
+    Sessions with <= _MAX_TURNS_PER_CHUNK turns are returned as-is.
+    """
+    result: List[dict] = []
+    for session in sessions:
+        if len(session.turns) <= _MAX_TURNS_PER_CHUNK:
+            result.append({
+                "session": session,
+                "turn_offset": 0,
+                "total_turns": len(session.turns),
+            })
+            continue
+
+        from meta_harness.storage.session_logs import Session as _Session
+
+        total = len(session.turns)
+        for start in range(0, total, _MAX_TURNS_PER_CHUNK):
+            chunk_turns = session.turns[start:start + _MAX_TURNS_PER_CHUNK]
+            chunk = _Session(
+                session_id=session.session_id,
+                start_time=session.start_time,
+                end_time=session.end_time,
+                file_path=session.file_path,
+                turns=chunk_turns,
+            )
+            result.append({
+                "session": chunk,
+                "turn_offset": start,
+                "total_turns": total,
+            })
+    return result
+
+
 def _split_into_batches(
     sessions: List["Session"], max_chars: int = _MAX_PROMPT_CHARS
-) -> List[List["Session"]]:
-    """Split sessions into batches that fit within the prompt size limit."""
-    batches: List[List["Session"]] = []
-    current_batch: List["Session"] = []
-    current_chars = 0
+) -> List[List[dict]]:
+    """Split sessions into batches that fit within the prompt size limit.
 
-    for session in sessions:
-        session_chars = _estimate_session_chars(session)
-        if current_batch and current_chars + session_chars > max_chars:
+    Batches are constrained by BOTH prompt size AND turn count (since
+    each turn requires output tokens for its observation).
+
+    Returns a list of batches.  Each batch is a list of chunk dicts
+    (from _chunk_large_sessions).
+    """
+    # First, chunk any session that has too many turns
+    chunked = _chunk_large_sessions(sessions)
+
+    batches: List[List[dict]] = []
+    current_batch: List[dict] = []
+    current_chars = 0
+    current_turns = 0
+
+    for chunk in chunked:
+        session_chars = _estimate_session_chars(chunk["session"])
+        chunk_turns = len(chunk["session"].turns)
+        # Enforce both char limit and turn limit per batch
+        if current_batch and (
+            current_chars + session_chars > max_chars
+            or current_turns + chunk_turns > _MAX_TURNS_PER_CHUNK
+        ):
             batches.append(current_batch)
             current_batch = []
             current_chars = 0
-        current_batch.append(session)
+            current_turns = 0
+        current_batch.append(chunk)
         current_chars += session_chars
+        current_turns += chunk_turns
 
     if current_batch:
         batches.append(current_batch)
@@ -305,14 +372,21 @@ def _merge_evaluator_outputs(outputs: List[dict]) -> dict:
 
 
 def _evaluate_batch(
-    sessions: List["Session"],
+    chunks: List[dict],
     repo: Path,
     model: str,
     existing_gaps: str,
     label: Optional[str] = None,
 ) -> dict:
-    """Run the evaluator on a single batch of sessions."""
-    session_text = _format_sessions_for_prompt(sessions)
+    """Run the evaluator on a single batch of session chunks."""
+    # Format each chunk with its turn offset
+    parts = []
+    for chunk in chunks:
+        part = _format_sessions_for_prompt(
+            [chunk["session"]], turn_offset=chunk["turn_offset"]
+        )
+        parts.append(part)
+    session_text = "\n".join(parts)
 
     user_prompt = (
         f"Evaluate the following session logs. Produce a complete evaluator "
@@ -366,15 +440,21 @@ def evaluate(
     batches = _split_into_batches(sessions)
 
     total = len(batches)
+    total_turns = sum(
+        len(chunk["session"].turns)
+        for batch in batches
+        for chunk in batch
+    )
     if total == 1:
         output = _evaluate_batch(
             batches[0], repo, model, existing_gaps,
-            label=f"evaluator ({len(sessions)} sessions)",
+            label=f"evaluator ({len(sessions)} sessions, {total_turns} turns)",
         )
     else:
         batch_outputs = []
         for i, batch in enumerate(batches):
-            label = f"evaluator batch {i + 1}/{total} ({len(batch)} sessions)"
+            batch_turns = sum(len(c["session"].turns) for c in batch)
+            label = f"evaluator batch {i + 1}/{total} ({batch_turns} turns)"
             print(f"  {label}...", file=sys.stderr, flush=True)
             batch_output = _evaluate_batch(
                 batch, repo, model, existing_gaps, label=label,
