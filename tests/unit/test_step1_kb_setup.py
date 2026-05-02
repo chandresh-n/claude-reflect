@@ -168,10 +168,10 @@ class TestConfigModels:
         val = cfg(tmp_git_repo)["models"][key]
         assert isinstance(val, str) and val, f"models.{key} must be a non-empty string"
 
-    def test_evaluator_model_is_sonnet_family(self, tmp_git_repo):
-        """Evaluator default is Sonnet. Spec: IMPLEMENTATION.md § 'Default models'."""
+    def test_evaluator_model_is_opus_family(self, tmp_git_repo):
+        """Evaluator default is Opus (1M context for large sessions)."""
         setup(tmp_git_repo)
-        assert "sonnet" in cfg(tmp_git_repo)["models"]["evaluator"].lower()
+        assert "opus" in cfg(tmp_git_repo)["models"]["evaluator"].lower()
 
     def test_proposer_model_is_opus_family(self, tmp_git_repo):
         """Proposer default is Opus (hardest reasoning). Spec: IMPLEMENTATION.md § 'Default models'."""

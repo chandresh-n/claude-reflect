@@ -25,7 +25,7 @@ import yaml
 # not subject to YAML-round-trip drift on subsequent calls.
 _DEFAULT_CONFIG: dict = {
     "models": {
-        "evaluator": "claude-sonnet-4-6",
+        "evaluator": "claude-opus-4-6",
         "proposer": "claude-opus-4-6",
         "author": "claude-sonnet-4-6",
     },

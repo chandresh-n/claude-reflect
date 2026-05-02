@@ -1,0 +1,20 @@
+models:
+  evaluator: claude-opus-4-6
+  proposer: claude-opus-4-6
+  author: claude-sonnet-4-6
+maintenance:
+  trigger_thresholds:
+    new_sessions: 10
+    new_decisions: 5
+    new_gap_records: 3
+    days_since_last: 7
+stale_gap_threshold_sessions: 30
+forced_novelty:
+  probability: 0.2
+  null_baseline_probability: 0.01
+window_warnings:
+  small_window_threshold_sessions: 3
+  large_window_threshold_sessions: 50
+logging:
+  default_verbosity: quiet
+  save_full_transcripts: true
