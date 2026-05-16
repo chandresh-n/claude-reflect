@@ -312,24 +312,25 @@ def _format_intent_for_prompt(intent: dict, repo: Path) -> str:
 
 
 def _parse_author_output(raw_text: str) -> dict:
-    """Parse the author's raw text response into a structured dict."""
-    text = raw_text.strip()
+    """Parse the author's raw text response into a structured dict.
 
-    # Strip markdown code fences if present
-    if text.startswith("```"):
-        lines = text.split("\n")
-        lines = lines[1:]
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        text = "\n".join(lines)
+    Tolerant of preamble prose and ```json``` fences — the model sometimes
+    emits both even when the system prompt forbids markdown wrapping.
+    """
+    from meta_harness.agents._json_parsing import extract_json
 
     try:
-        output = json.loads(text)
+        output = extract_json(raw_text)
     except json.JSONDecodeError as e:
         raise AuthorError(
             f"Failed to parse author output as JSON: {e}\n"
             f"Raw text (first 500 chars): {raw_text[:500]}"
         ) from e
+
+    if not isinstance(output, dict):
+        raise AuthorError(
+            f"Author output is not a JSON object (got {type(output).__name__})"
+        )
 
     # Validate minimal structure
     if "status" not in output:
