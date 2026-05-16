@@ -1,6 +1,7 @@
 # Session prompts
 
-Pre-written prompts for every session of the 12-step build.
+Pre-written prompts for every session of the 12-step build plus the
+post-0-1 architectural refactors (steps 13–15).
 Each step has three sessions: A (failing gate), B (implementation), V (verification).
 
 **How to use:**
@@ -47,6 +48,15 @@ Each step has three sessions: A (failing gate), B (implementation), V (verificat
 - [x] 12A — Step 12 Session A
 - [x] 12B — Step 12 Session B
 - [x] 12V — Step 12 Verification subagent
+- [x] 13A — Step 13 Session A
+- [x] 13B — Step 13 Session B
+- [x] 13V — Step 13 Verification subagent
+- [ ] 14A — Step 14 Session A
+- [ ] 14B — Step 14 Session B
+- [ ] 14V — Step 14 Verification subagent
+- [ ] 15A — Step 15 Session A
+- [ ] 15B — Step 15 Session B
+- [ ] 15V — Step 15 Verification subagent
 
 ---
 
@@ -958,6 +968,621 @@ Gate criteria (HARD CLI — from docs/PLAN.md Step 12):
 3. --verbose produces streamed output and tool-call traces.
 4. Fresh-repo first invocation auto-runs Phase 1.
 5. Proposal batch markdown has no decorative formatting.
+
+Your output must be SIGN-OFF or DRIFT LIST.
+Do not run the tests. Read the code and reason against the spec.
+```
+
+---
+
+## Step 13 — Evaluator pipeline: infrastructure + stage 1a (HARD gate)
+
+### 13A — Session A (failing gate)
+
+```
+Session A — Step 13 evaluator pipeline: infrastructure + stage 1a (HARD gate).
+
+Read in this order (do NOT read any prior implementation work,
+and in particular do NOT read src/meta_harness/agents/evaluator.py —
+that is the old single-call evaluator, replaced in step 15, and is
+not authoritative for what step 13 builds):
+1. CLAUDE.md
+2. file_navigation.md
+3. docs/PLAN.md  (Step 13 only; glance at 14 and 15 to understand
+   what stage 1a hands off to)
+4. docs/spec/03-agents/evaluator.md
+5. docs/spec/01-data-structures/evaluator-output.md
+
+Then write failing tests under:
+- tests/unit/test_pipeline_runner.py
+- tests/unit/test_pipeline_cache.py
+- tests/unit/test_pipeline_manifest.py
+- tests/unit/test_pipeline_stage_1a.py
+
+Do not create any implementation files. The pipeline package
+src/meta_harness/agents/pipeline/ does not exist yet — tests must
+fail on import. That is the gate.
+
+Gate criteria to cover (HARD — from docs/PLAN.md Step 13):
+1. cache_key includes prompt_version; hit/miss/invalidate flow works;
+   bumping prompt_version invalidates the stage's cache without
+   touching other stages.
+2. The Runner abstraction supports the claude-cli implementation and
+   is swappable. Architecturally enforced: no claude_runner import
+   inside pipeline modules outside the runner module (AST scan).
+3. Session manifest builder is deterministic (run twice → byte-
+   identical) and makes ZERO model calls.
+4. Stage 1a output carries every required schema field for fixture
+   turns covering: plain text exchange, a Read tool call, a Bash
+   tool call, an MCP tool call with outcome="denied", and a turn
+   with 12 similar Reads that should cluster (count + targets[]).
+5. Stage 1a cache hit on a re-run for the same turn results in zero
+   additional runner invocations.
+6. Failure of one turn's 1a call does not poison the description of
+   any other turn (per-turn failure isolation; failed turns surface
+   as {"_failed": True, ...} sentinels in turn order).
+
+Cross-cutting cautions (from CLAUDE.md) to keep live:
+- No scalar grades anywhere — not as quality scores, not as
+  confidences.
+- Agent context isolation — each Runner.invoke is a fresh
+  subprocess.
+- Append-only — caches are written, never destructively rewritten.
+
+Run: PYTHONPATH=src python3.11 -m pytest tests/unit/test_pipeline_runner.py
+     tests/unit/test_pipeline_cache.py tests/unit/test_pipeline_manifest.py
+     tests/unit/test_pipeline_stage_1a.py -v
+Confirm every new test FAILS.
+Commit: "tests: step 13 evaluator pipeline infra + stage 1a — failing gate"
+```
+
+### 13B — Session B (implementation)
+
+```
+Session B — Step 13 evaluator pipeline: infrastructure + stage 1a.
+
+Read in this order (do NOT read prior session transcripts, and in
+particular do NOT read src/meta_harness/agents/evaluator.py — that
+is the old single-call evaluator, replaced in step 15, and is not
+authoritative for what step 13 builds):
+1. CLAUDE.md
+2. file_navigation.md
+3. docs/PLAN.md  (Step 13 only; glance at 14 and 15 for handoff
+   context — they are NOT in your scope)
+4. docs/spec/03-agents/evaluator.md
+5. docs/spec/01-data-structures/evaluator-output.md
+6. tests/unit/test_pipeline_runner.py
+7. tests/unit/test_pipeline_cache.py
+8. tests/unit/test_pipeline_manifest.py
+9. tests/unit/test_pipeline_stage_1a.py
+
+Do not re-read or re-derive the gate. The tests are the contract.
+If you think a test is wrong, surface it instead of softening the
+implementation to match.
+
+Then implement a new package src/meta_harness/agents/pipeline/
+containing at least:
+- __init__.py
+- runner.py — Runner abstraction + ClaudeCLIRunner wrapping
+  claude_runner.invoke_claude. Only this file may import
+  claude_runner.
+- cache.py — cache_key(stage_id, model, prompt_version, content)
+  and StageCache(repo, stage_id) with .get(key) / .set(key, value)
+  persisting under
+  .meta-harness/eval-cache/stage-<id>/<key>.json.
+- manifest.py — build_session_manifest(session) returning a dict
+  (or dataclass) with at minimum session_id, turn_count,
+  duration_seconds, tool_call_counts, first_turn_excerpts (≤3),
+  last_turn_excerpts (≤3). No model calls. Deterministic.
+- stage_1a.py — describe_turn(session_id, turn_index, turn,
+  runner, repo, model) per the schema pinned by the tests, plus
+  describe_session_turns(session, runner, repo, model) with per-
+  turn failure isolation. The 1a prompt template lives in this
+  file as a constant; expose a STAGE_1A_PROMPT_VERSION constant
+  that gets included in cache keys.
+
+Cross-cutting cautions (from CLAUDE.md) to keep live:
+- No scalar grades anywhere — not as quality scores, not as
+  confidences.
+- Agent context isolation — each Runner.invoke is a fresh
+  subprocess.
+- Append-only — caches are written, never destructively rewritten
+  in place.
+- Plain markdown / JSON — no decorative formatting.
+
+Iterate until
+  PYTHONPATH=src python3.11 -m pytest tests/unit/test_pipeline_runner.py
+    tests/unit/test_pipeline_cache.py tests/unit/test_pipeline_manifest.py
+    tests/unit/test_pipeline_stage_1a.py -v
+is 29/29 green AND the rest of the suite stays green.
+Use /usr/bin/python3 if python3.11 resolves to a Python without
+pytest installed.
+
+Commit: "feat: step 13 evaluator pipeline infra + stage 1a — implementation"
+Do not amend any existing commits. Do not run any git reset or git
+push.
+```
+
+### 13V — Verification subagent
+
+```
+You are a verification subagent for Step 13 of the meta-harness build.
+Your only job is to read the spec, the gate criteria, and the
+implementation, then return a written sign-off or a drift list.
+You have no implementer context. Do not read any prior session
+transcripts.
+
+Read these files, in this order:
+1. docs/spec/03-agents/evaluator.md
+2. docs/spec/01-data-structures/evaluator-output.md
+3. docs/PLAN.md  (Step 13 gate criteria only)
+4. tests/unit/test_pipeline_runner.py
+5. tests/unit/test_pipeline_cache.py
+6. tests/unit/test_pipeline_manifest.py
+7. tests/unit/test_pipeline_stage_1a.py
+8. src/meta_harness/agents/pipeline/__init__.py
+9. src/meta_harness/agents/pipeline/runner.py
+10. src/meta_harness/agents/pipeline/cache.py
+11. src/meta_harness/agents/pipeline/manifest.py
+12. src/meta_harness/agents/pipeline/stage_1a.py
+
+Do NOT read src/meta_harness/agents/evaluator.py — that is the old
+single-call evaluator, replaced in step 15, and is not
+authoritative for what step 13 builds.
+
+Gate criteria (HARD — from docs/PLAN.md Step 13):
+1. Cache keys include prompt_version; the hit/miss/invalidate flow
+   works correctly across stage namespaces.
+2. The Runner abstraction supports the claude-cli implementation
+   and is swappable; only pipeline/runner.py imports claude_runner.
+3. Manifest builder is deterministic and makes zero model calls.
+4. Stage 1a output carries every required schema field across the
+   five fixture turn shapes (plain, Read, Bash, denied MCP,
+   clustered Reads).
+5. Stage 1a cache hit on a re-run yields zero additional runner
+   invocations.
+6. Per-turn failure isolation: one turn's failure does not poison
+   the description of any other turn.
+
+Cross-cutting cautions to flag if violated:
+- Any scalar grade (quality score, confidence value, priority
+  number) anywhere in the pipeline schema or code.
+- A pipeline module other than runner.py importing claude_runner.
+- Cache writes that destructively rewrite or delete prior entries
+  (caches must be append-only).
+- The internal stage 1a schema being confused with the external
+  evaluator-output schema in the spec — they are distinct.
+
+Your output must be SIGN-OFF or DRIFT LIST.
+Do not run the tests. Read the code and reason against the spec.
+```
+
+---
+
+## Step 14 — Evaluator pipeline: stages 1b, 2, 3 (HARD gate)
+
+### 14A — Session A (failing gate)
+
+```
+Session A — Step 14 evaluator pipeline: stages 1b, 2, 3 (HARD gate).
+
+Read in this order (do NOT read any prior implementation work, and
+in particular do NOT read src/meta_harness/agents/evaluator.py —
+that is the old single-call evaluator, replaced in step 15, and
+its prompt shape is the wrong reference for the new stages):
+1. CLAUDE.md
+2. file_navigation.md
+3. docs/PLAN.md  (Step 14 only; glance at 15 for handoff context)
+4. docs/spec/03-agents/evaluator.md
+5. docs/spec/01-data-structures/evaluator-output.md
+6. src/meta_harness/agents/pipeline/stage_1a.py  (to understand the
+   stage 1a output that stage 1b consumes; do NOT change it)
+7. src/meta_harness/agents/pipeline/cache.py  (you will key new
+   caches the same way)
+8. src/meta_harness/agents/pipeline/runner.py  (you will accept a
+   Runner argument the same way stage 1a does)
+
+Then write failing tests under:
+- tests/unit/test_pipeline_stage_1b.py
+- tests/unit/test_pipeline_stage_2.py
+- tests/unit/test_pipeline_stage_3.py
+
+Do not create any implementation files. Stages 1b/2/3 do not exist
+yet — tests must fail on import. That is the gate.
+
+Gate criteria to cover (HARD — from docs/PLAN.md Step 14):
+1. Stage 1b output schema matches the spec's per_turn_observation
+   and pass_classification shapes from
+   docs/spec/01-data-structures/evaluator-output.md.
+2. Overlap dedup: a fixture with 25-turn windows and 5-turn overlap
+   produces exactly one per_turn_observation per turn across the
+   boundary — no duplicates, no gaps.
+3. Stage 2 produces non-overlapping pass_classifications covering
+   every turn of a session (no gaps, no overlaps; every turn
+   belongs to exactly one pass).
+4. Stage 3 produces exactly one session_narrative per session.
+5. Cache invalidation cascades: if the upstream digest for a
+   session changes, the downstream stage's cache for that session
+   misses and re-runs. New caches MUST live under
+   .meta-harness/eval-cache/stage-1b/, .../stage-2/, .../stage-3/
+   keyed on (upstream digests + model + prompt_version).
+6. Partial-with-flag policy: one window failing in stage 1b for a
+   session yields a partial_completion flag on that session's
+   stage 3 narrative, NOT a session drop. Other sessions are
+   unaffected.
+
+Cross-cutting cautions (from CLAUDE.md) to keep live:
+- No scalar grades anywhere — not as quality scores, not as
+  confidences, not as priority numbers.
+- Agent context isolation — each Runner.invoke is a fresh
+  subprocess.
+- Append-only — caches are written, never destructively rewritten
+  in place.
+- Plain markdown / JSON — no decorative formatting.
+
+Run: PYTHONPATH=src python3.11 -m pytest
+       tests/unit/test_pipeline_stage_1b.py
+       tests/unit/test_pipeline_stage_2.py
+       tests/unit/test_pipeline_stage_3.py -v
+Confirm every new test FAILS.
+Commit: "tests: step 14 evaluator pipeline stages 1b/2/3 — failing gate"
+```
+
+### 14B — Session B (implementation)
+
+```
+Session B — Step 14 evaluator pipeline: stages 1b, 2, 3.
+
+Read in this order (do NOT read prior session transcripts, and in
+particular do NOT read src/meta_harness/agents/evaluator.py — that
+is the old single-call evaluator, replaced in step 15, and its
+prompt shape is the wrong reference for the new stages):
+1. CLAUDE.md
+2. file_navigation.md
+3. docs/PLAN.md  (Step 14 only; glance at 15 for handoff context —
+   step 15 is NOT in your scope)
+4. docs/spec/03-agents/evaluator.md
+5. docs/spec/01-data-structures/evaluator-output.md
+6. src/meta_harness/agents/pipeline/stage_1a.py  (you consume this
+   output; do NOT change it)
+7. src/meta_harness/agents/pipeline/cache.py
+8. src/meta_harness/agents/pipeline/runner.py
+9. tests/unit/test_pipeline_stage_1b.py
+10. tests/unit/test_pipeline_stage_2.py
+11. tests/unit/test_pipeline_stage_3.py
+
+Do not re-read or re-derive the gate. The tests are the contract.
+If you think a test is wrong, surface it instead of softening the
+implementation to match.
+
+Then implement under src/meta_harness/agents/pipeline/ at least:
+- stage_1b.py — windowed per-turn observations + draft pass
+  classifications. Window size and overlap are config knobs;
+  defaults TBD in implementation (document the chosen defaults at
+  the top of the module). Cache namespace: stage-1b. Expose
+  STAGE_1B_PROMPT_VERSION.
+- stage_2.py — per-session refinement of pass classifications
+  across windows; emits the final non-overlapping
+  pass_classifications per the spec. Cache namespace: stage-2.
+  Expose STAGE_2_PROMPT_VERSION.
+- stage_3.py — per-session session_narrative per the spec, with a
+  partial_completion flag set when upstream stages dropped data
+  for that session. Cache namespace: stage-3. Expose
+  STAGE_3_PROMPT_VERSION.
+
+Architectural constraint: do NOT import claude_runner from any of
+these modules. Talk to the Runner abstraction. This is enforced by
+the same AST scan that pinned step 13 — don't regress it.
+
+Cross-cutting cautions (from CLAUDE.md) to keep live:
+- No scalar grades anywhere.
+- Agent context isolation — each Runner.invoke is a fresh
+  subprocess.
+- Append-only — caches are written, never destructively rewritten.
+- Plain markdown / JSON — no decorative formatting in any prompt
+  template.
+
+Iterate until
+  PYTHONPATH=src python3.11 -m pytest
+    tests/unit/test_pipeline_stage_1b.py
+    tests/unit/test_pipeline_stage_2.py
+    tests/unit/test_pipeline_stage_3.py -v
+is green AND the rest of the suite stays green. Use /usr/bin/python3
+if python3.11 resolves to a Python without pytest installed.
+
+Commit: "feat: step 14 evaluator pipeline stages 1b/2/3 — implementation"
+Do not amend any existing commits. Do not run any git reset or git
+push.
+```
+
+### 14V — Verification subagent
+
+```
+You are a verification subagent for Step 14 of the meta-harness build.
+Your only job is to read the spec, the gate criteria, and the
+implementation, then return a written sign-off or a drift list.
+You have no implementer context. Do not read any prior session
+transcripts.
+
+Read these files, in this order:
+1. docs/spec/03-agents/evaluator.md
+2. docs/spec/01-data-structures/evaluator-output.md
+3. docs/PLAN.md  (Step 14 gate criteria only)
+4. tests/unit/test_pipeline_stage_1b.py
+5. tests/unit/test_pipeline_stage_2.py
+6. tests/unit/test_pipeline_stage_3.py
+7. src/meta_harness/agents/pipeline/stage_1b.py
+8. src/meta_harness/agents/pipeline/stage_2.py
+9. src/meta_harness/agents/pipeline/stage_3.py
+10. src/meta_harness/agents/pipeline/cache.py  (to confirm cache
+    namespaces and key composition match the gate's expectations)
+
+Do NOT read src/meta_harness/agents/evaluator.py — that is the old
+single-call evaluator, replaced in step 15, and is not
+authoritative for what step 14 builds.
+
+Gate criteria (HARD — from docs/PLAN.md Step 14):
+1. Stage 1b output schema matches the spec's per_turn_observation
+   and pass_classification shapes.
+2. Overlap dedup is correct across window boundaries.
+3. Stage 2 emits non-overlapping pass_classifications covering
+   every turn (no gaps, no overlaps).
+4. Stage 3 emits exactly one narrative per session.
+5. Cache invalidation cascades when an upstream digest changes;
+   each stage's cache lives under its own
+   .meta-harness/eval-cache/stage-<id>/ namespace.
+6. One window failing in stage 1b for a session yields a partial-
+   completion flag on stage 3's narrative for that session, not a
+   session drop.
+
+Cross-cutting cautions to flag if violated:
+- Any scalar grade (quality score, confidence, priority) anywhere
+  in the new pipeline schemas or code.
+- A pipeline module other than runner.py importing claude_runner.
+- Cache writes that destructively rewrite or delete prior entries.
+- Stage 1b/2/3 output drifting from the spec's evaluator-output
+  schema (these stages produce the SPEC schema; only stage 1a is
+  internal).
+- The Human:/Assistant: conversational prompt shape from the old
+  evaluator showing up in any new stage's prompt.
+
+Your output must be SIGN-OFF or DRIFT LIST.
+Do not run the tests. Read the code and reason against the spec.
+```
+
+---
+
+## Step 15 — Evaluator pipeline: stage 4 + orchestrator + cutover (HARD gate)
+
+### 15A — Session A (failing gate)
+
+```
+Session A — Step 15 evaluator pipeline: stage 4 + orchestrator +
+cutover (HARD gate).
+
+Read in this order (do NOT read any prior implementation work for
+this step):
+1. CLAUDE.md
+2. file_navigation.md
+3. docs/PLAN.md  (Step 15 only)
+4. docs/spec/03-agents/evaluator.md
+5. docs/spec/01-data-structures/evaluator-output.md
+6. docs/spec/01-data-structures/gap-record.md
+7. src/meta_harness/agents/pipeline/stage_1a.py
+8. src/meta_harness/agents/pipeline/stage_1b.py
+9. src/meta_harness/agents/pipeline/stage_2.py
+10. src/meta_harness/agents/pipeline/stage_3.py
+11. src/meta_harness/agents/pipeline/cache.py
+12. src/meta_harness/agents/pipeline/runner.py
+13. src/meta_harness/agents/evaluator.py  (the old single-call
+    evaluator — read it ONLY to enumerate what the cutover deletes:
+    _split_into_batches, _chunk_large_sessions, _evaluate_batch,
+    _format_sessions_for_prompt, _build_batch_prompt, and the
+    single-call evaluate() public surface. Do NOT mirror its
+    prompt shape into the new orchestrator.)
+14. src/meta_harness/processes/run_loop.py  (Phase 4 — to see who
+    calls evaluate() today so the cutover does not strand callers)
+
+Then write failing tests under:
+- tests/unit/test_pipeline_stage_4.py
+- tests/unit/test_pipeline_orchestrator.py
+- tests/integration/test_pipeline_e2e.py
+- tests/unit/test_pipeline_cutover.py  (the static-scan regression)
+
+Do not create or modify any implementation files. The orchestrator,
+stage_4, and the cutover do not exist yet — tests must fail. That
+is the gate.
+
+Gate criteria to cover (HARD — from docs/PLAN.md Step 15):
+1. Orchestrator sequences stages correctly with mocked stages —
+   1a → 1b → 2 → 3 → 4, with each stage's output threaded into
+   the next, and per-stage progress logged under
+   .meta-harness/logs/eval/<timestamp>/stages/.
+2. Partial-failure propagation: a partial failure in any stage
+   sets the partial_completion flag on the affected session's
+   session_narrative in the final output, without aborting the
+   run or dropping unaffected sessions.
+3. Cache-resume: re-running with identical inputs makes ZERO
+   model calls. Re-running with one new session only re-runs that
+   session's 1a/1b/2/3 plus the corpus-level 4 — the other
+   sessions hit cache.
+4. End-to-end integration test: with all five stages mocked to
+   canned outputs, the orchestrator produces a final document
+   containing exactly the four top-level keys required by
+   docs/spec/01-data-structures/evaluator-output.md
+   (per_turn_observations, pass_classifications, gap_observations,
+   session_narratives).
+5. Cutover regression (static scan over src/): the symbol names
+   _split_into_batches, _chunk_large_sessions, _evaluate_batch,
+   _format_sessions_for_prompt, _build_batch_prompt are absent
+   from src/. The string "Human:" followed by a newline and
+   "Assistant:" (the old conversational prompt shape) is absent
+   from every file under src/meta_harness/agents/pipeline/. Gap
+   record writes still satisfy the invariants in
+   docs/spec/01-data-structures/gap-record.md (append-only, no
+   deletions, matched_gap_id merge rule).
+
+Cross-cutting cautions (from CLAUDE.md) to keep live:
+- No scalar grades anywhere — not as quality scores, not as
+  confidences.
+- Agent context isolation — each Runner.invoke is a fresh
+  subprocess.
+- Append-only — caches AND gap records. Stage 4 must never delete
+  gap records or rewrite their evidence destructively; it can only
+  append evidence and increment counters per the gap-record spec.
+- Plain markdown / JSON — no decorative formatting.
+
+Run: PYTHONPATH=src python3.11 -m pytest
+       tests/unit/test_pipeline_stage_4.py
+       tests/unit/test_pipeline_orchestrator.py
+       tests/unit/test_pipeline_cutover.py
+       tests/integration/test_pipeline_e2e.py -v
+Confirm every new test FAILS.
+Commit: "tests: step 15 evaluator pipeline stage 4 + orchestrator
++ cutover — failing gate"
+```
+
+### 15B — Session B (implementation)
+
+```
+Session B — Step 15 evaluator pipeline: stage 4 + orchestrator +
+cutover.
+
+Read in this order (do NOT read prior session transcripts):
+1. CLAUDE.md
+2. file_navigation.md
+3. docs/PLAN.md  (Step 15 only)
+4. docs/spec/03-agents/evaluator.md
+5. docs/spec/01-data-structures/evaluator-output.md
+6. docs/spec/01-data-structures/gap-record.md
+7. src/meta_harness/agents/pipeline/stage_1a.py
+8. src/meta_harness/agents/pipeline/stage_1b.py
+9. src/meta_harness/agents/pipeline/stage_2.py
+10. src/meta_harness/agents/pipeline/stage_3.py
+11. src/meta_harness/agents/pipeline/cache.py
+12. src/meta_harness/agents/pipeline/runner.py
+13. src/meta_harness/agents/evaluator.py  (read it to know what to
+    DELETE in the cutover; do NOT mirror its prompt shape into the
+    new orchestrator)
+14. src/meta_harness/processes/run_loop.py  (rewire its evaluator
+    call site to the new orchestrator-backed evaluate())
+15. tests/unit/test_pipeline_stage_4.py
+16. tests/unit/test_pipeline_orchestrator.py
+17. tests/unit/test_pipeline_cutover.py
+18. tests/integration/test_pipeline_e2e.py
+
+Do not re-read or re-derive the gate. The tests are the contract.
+If you think a test is wrong, surface it instead of softening the
+implementation to match.
+
+Then implement under src/meta_harness/agents/pipeline/:
+- stage_4.py — cross-session gap observation production from the
+  merged stage 1a + stage 3 outputs across the corpus. Writes gap
+  records via the existing side-effect path; honours append-only
+  and the matched-gap-id merge rule from gap-record.md. Cache
+  namespace: stage-4. Expose STAGE_4_PROMPT_VERSION.
+- orchestrator.py — new evaluate(sessions, repo, model, ...) that
+  runs 1a → 1b → 2 → 3 → 4, surfaces per-stage progress to
+  .meta-harness/logs/eval/<timestamp>/stages/, applies partial-
+  with-flag failure propagation, and persists per-stage
+  checkpoints for cheap resume.
+
+Then perform the cutover:
+- Replace src/meta_harness/agents/evaluator.py's evaluate() with a
+  thin shim that delegates to orchestrator.evaluate(), OR remove
+  evaluator.py entirely and update callers to import the new
+  evaluate() directly. Either is fine; pick the one that minimises
+  churn at the call sites.
+- Delete the pre-pipeline batching helpers: _split_into_batches,
+  _chunk_large_sessions, _evaluate_batch,
+  _format_sessions_for_prompt, _build_batch_prompt. They MUST NOT
+  appear under src/ after this session.
+- Delete the old Human:/Assistant: conversational prompt shape
+  from anywhere under src/meta_harness/agents/pipeline/.
+- Update src/meta_harness/processes/run_loop.py if its call to
+  evaluate() needs new argument plumbing.
+
+Architectural constraint: do NOT import claude_runner from any
+pipeline module except runner.py. The AST scan from step 13 still
+enforces this.
+
+Cross-cutting cautions (from CLAUDE.md) to keep live:
+- No scalar grades anywhere.
+- Agent context isolation — each Runner.invoke is a fresh
+  subprocess.
+- Append-only — caches AND gap records. Stage 4 must never delete
+  gap records or destructively rewrite evidence.
+- Plain markdown / JSON — no decorative formatting.
+
+Iterate until
+  PYTHONPATH=src python3.11 -m pytest tests/ -v
+is fully green (the full suite, not just the new tests — the
+cutover touches existing call sites). Use /usr/bin/python3 if
+python3.11 resolves to a Python without pytest installed.
+
+Commit: "feat: step 15 evaluator pipeline stage 4 + orchestrator
++ cutover — implementation"
+Do not amend any existing commits. Do not run any git reset or git
+push.
+```
+
+### 15V — Verification subagent
+
+```
+You are a verification subagent for Step 15 of the meta-harness build.
+This is the final step of the post-0-1 pipeline refactor and the
+cutover from the old single-call evaluator. Your only job is to
+read the spec, the gate criteria, and the implementation, then
+return a written sign-off or a drift list. You have no implementer
+context. Do not read any prior session transcripts.
+
+Read these files, in this order:
+1. docs/spec/03-agents/evaluator.md
+2. docs/spec/01-data-structures/evaluator-output.md
+3. docs/spec/01-data-structures/gap-record.md
+4. docs/PLAN.md  (Step 15 gate criteria only)
+5. tests/unit/test_pipeline_stage_4.py
+6. tests/unit/test_pipeline_orchestrator.py
+7. tests/unit/test_pipeline_cutover.py
+8. tests/integration/test_pipeline_e2e.py
+9. src/meta_harness/agents/pipeline/stage_4.py
+10. src/meta_harness/agents/pipeline/orchestrator.py
+11. src/meta_harness/agents/pipeline/cache.py  (to confirm stage 4
+    cache namespacing and resume behaviour)
+12. src/meta_harness/processes/run_loop.py  (Phase 4 call site)
+13. src/meta_harness/agents/evaluator.py if it still exists (only
+    to confirm the old batching code paths are gone)
+
+Gate criteria (HARD — from docs/PLAN.md Step 15):
+1. Orchestrator sequences 1a → 1b → 2 → 3 → 4 correctly with
+   mocked stages.
+2. Partial failure in any stage propagates a partial_completion
+   flag to the affected session's narrative without aborting the
+   run.
+3. Cache-resume: identical inputs → zero model calls; one new
+   session → only that session's 1a/1b/2/3 re-run plus corpus-
+   level 4.
+4. End-to-end test with mocked stages produces a 4-key document
+   matching the spec schema (per_turn_observations,
+   pass_classifications, gap_observations, session_narratives).
+5. Cutover regression: _split_into_batches,
+   _chunk_large_sessions, _evaluate_batch,
+   _format_sessions_for_prompt, _build_batch_prompt are absent
+   from src/. The old Human:/Assistant: conversational prompt
+   shape is absent from src/meta_harness/agents/pipeline/.
+6. Gap record writes by stage 4 satisfy
+   docs/spec/01-data-structures/gap-record.md (append-only, no
+   deletions, matched_gap_id merge rule, consistent counters).
+
+Cross-cutting cautions to flag if violated:
+- Any scalar grade (quality score, confidence, priority) anywhere
+  in the orchestrator, stage 4, or the final output.
+- A pipeline module other than runner.py importing claude_runner.
+- Destructive cache or gap-record writes.
+- The old Human:/Assistant: prompt shape sneaking into the new
+  orchestrator or stage 4 prompts.
+- A caller of the old evaluate() that was not rewired to the new
+  orchestrator-backed evaluate() and is now broken.
 
 Your output must be SIGN-OFF or DRIFT LIST.
 Do not run the tests. Read the code and reason against the spec.
