@@ -193,6 +193,39 @@ def test_model_passed_through(mock_popen: MagicMock) -> None:
 
 @_patch_select
 @patch("meta_harness.agents.claude_runner.subprocess.Popen")
+def test_isolation_flags_passed_to_claude(mock_popen: MagicMock) -> None:
+    """RCA fix: --strict-mcp-config + --disable-slash-commands must always
+    be passed, and Popen.cwd must be a tempdir (not the project dir).
+    Without these, claude -p inherits the user's MCP toolbox and the
+    project's CLAUDE.md, which lets the evaluator be tricked into
+    acting as an agent on the session content."""
+    import tempfile
+
+    mock_popen.return_value = _make_mock_popen("ok")
+    invoke_claude(system_prompt="sys", user_prompt="usr")
+
+    cmd = mock_popen.call_args[0][0]
+    assert "--strict-mcp-config" in cmd, (
+        "--strict-mcp-config must be passed so the subprocess loads zero "
+        "MCP servers from user/project config."
+    )
+    assert "--disable-slash-commands" in cmd, (
+        "--disable-slash-commands must be passed so skills don't leak in."
+    )
+    # --mcp-config MUST NOT be passed, otherwise --strict-mcp-config would
+    # load only those servers rather than disabling MCP entirely.
+    assert "--mcp-config" not in cmd
+
+    cwd = mock_popen.call_args.kwargs.get("cwd")
+    assert cwd is not None, "cwd must be set to a clean dir (system tempdir)"
+    assert cwd == tempfile.gettempdir(), (
+        f"cwd should be the system tempdir to prevent CLAUDE.md "
+        f"auto-discovery; got {cwd!r}"
+    )
+
+
+@_patch_select
+@patch("meta_harness.agents.claude_runner.subprocess.Popen")
 def test_progress_output(mock_popen: MagicMock, capsys) -> None:
     """Asserts progress is printed to stderr during streaming."""
     mock_popen.return_value = _make_mock_popen_with_progress("result", output_tokens=50)

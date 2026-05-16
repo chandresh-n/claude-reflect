@@ -6,3 +6,8 @@ dist/
 .pytest_cache/
 *.egg
 .eggs/
+
+# Meta-harness local cache: regenerable evaluator output, both
+# the current layout (sessions/, batches/) and any orphan content-hash
+# dirs from earlier cache schemas.
+.meta-harness/eval-cache/

@@ -259,14 +259,26 @@ class ReviewCommand:
             if not sessions:
                 self._log("No sessions to evaluate — skipping evaluator.")
                 return _empty_eval
-            self._log(f"Running evaluator on {len(sessions)} session(s) (model: {evaluator_model})...")
+            self._log(
+                f"Running evaluator on {len(sessions)} session(s) "
+                f"(model: {evaluator_model})..."
+            )
             try:
-                result = evaluate(sessions, repo, model=evaluator_model)
+                result = evaluate(
+                    sessions,
+                    repo,
+                    model=evaluator_model,
+                )
                 gaps = result.get("gap_observations", [])
                 self._log(f"Evaluator found {len(gaps)} gap observation(s).")
                 return result
             except EvaluatorError as e:
                 self._log(f"Evaluator error: {e}")
+                self._log(
+                    "Partial batch results were saved under "
+                    ".meta-harness/eval-cache/<hash>/; re-run the same "
+                    "review command to retry only the failed batches."
+                )
                 return _empty_eval
             except ClaudeRunnerError as e:
                 self._log(f"Evaluator failed (Claude runner): {e}")

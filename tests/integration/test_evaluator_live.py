@@ -109,17 +109,14 @@ def test_invoke_claude_directly():
 def test_session_prompt_size():
     """Show how large the formatted prompt is for our tiny session."""
     from meta_harness.agents.evaluator import (
-        _format_sessions_for_prompt,
+        _build_batch_prompt,
         SYSTEM_PROMPT,
     )
 
     session = _make_tiny_session()
-    session_text = _format_sessions_for_prompt([session])
-    user_prompt = (
-        f"Evaluate the following session logs. Produce a complete evaluator "
-        f"output JSON document covering all sessions and all turns.\n\n"
-        f"## Session logs to evaluate\n\n{session_text}"
-    )
+    chunks = [{"session": session, "turn_offset": 0,
+               "total_turns": len(session.turns)}]
+    user_prompt = _build_batch_prompt(chunks, existing_gaps="")
 
     print(f"\n=== PROMPT SIZE ===", file=sys.stderr)
     print(f"System prompt: {len(SYSTEM_PROMPT)} chars", file=sys.stderr)
@@ -146,17 +143,14 @@ def test_evaluator_raw_invocation():
     """
     from meta_harness.agents.claude_runner import invoke_claude, ClaudeRunnerError
     from meta_harness.agents.evaluator import (
-        _format_sessions_for_prompt,
+        _build_batch_prompt,
         SYSTEM_PROMPT,
     )
 
     session = _make_tiny_session()
-    session_text = _format_sessions_for_prompt([session])
-    user_prompt = (
-        f"Evaluate the following session logs. Produce a complete evaluator "
-        f"output JSON document covering all sessions and all turns.\n\n"
-        f"## Session logs to evaluate\n\n{session_text}"
-    )
+    chunks = [{"session": session, "turn_offset": 0,
+               "total_turns": len(session.turns)}]
+    user_prompt = _build_batch_prompt(chunks, existing_gaps="")
 
     print(f"\n=== TEST: evaluator raw invocation ===", file=sys.stderr)
     start = time.monotonic()
