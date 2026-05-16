@@ -247,6 +247,130 @@ dependencies. Steps are numbered to match `docs/IMPLEMENTATION.md` §
 
 ---
 
+## Architectural refactors (post-0-1)
+
+The 0-1 build (steps 1–12) keeps the external contracts but in practice
+the evaluator's internal architecture — one model call per 50-turn batch,
+producing all four scopes (per-turn, per-pass, per-session, corpus) at
+once — produces drift at scope boundaries (split passes, duplicate
+narratives) and is fragile under MCP tool exposure (the model treats the
+conversation-shaped user prompt as a transcript to continue and emits
+tool calls instead of JSON). Steps 13–15 refactor the evaluator into a
+five-stage pipeline. The spec contract is unchanged; the wire format
+between stages is the spec schemas themselves. Each step follows the
+same Session A / Session B / verification protocol.
+
+### Step 13 — Evaluator pipeline: infrastructure + stage 1a · HARD
+
+- **Spec:** `docs/spec/03-agents/evaluator.md`,
+  `docs/spec/01-data-structures/evaluator-output.md`. The pipeline is an
+  internal refactor; the external evaluator output schema is unchanged.
+- **Contract:**
+  - A pluggable `Runner` abstraction with at minimum a claude-cli
+    implementation wrapping the existing `claude_runner.invoke_claude`.
+    Adding a local-model runner later does not change the pipeline.
+  - A per-stage cache under
+    `.meta-harness/eval-cache/stage-<id>/<key>.json` keyed on
+    `(model, prompt_version, content_hash)`. Bumping `prompt_version`
+    invalidates the stage's cache without touching other stages.
+  - A deterministic session manifest builder — no model call, derived
+    from the parsed JSONL — providing per-session orientation to
+    downstream stages (turn count, duration, tool-call distribution,
+    first/last turn snippets, heuristic retry indices).
+  - Stage 1a: one model call per turn, parallel across turns, isolated
+    context. Output is an internal type (not the spec schema):
+    `{session_id, turn_index, goal_signal, action_signal, outcome_signal,
+    friction_signal, effort_signal, tool_actions[], evidence_anchors[]}`.
+    `tool_actions[*]` captures target (file path / command / query /
+    recipient) and outcome (`ok` / `error` / `denied`); within-turn
+    clustering allowed when many calls of the same tool form a
+    coherent intent.
+- **Gate (HARD):** unit tests assert:
+  - cache keys include `prompt_version`, hit/miss/invalidate flow works
+  - the runner abstraction supports the claude-cli implementation and is
+    swappable (no `claude_runner` import inside pipeline modules outside
+    the runner module)
+  - manifest builder is deterministic (run twice → byte-identical) and
+    makes zero model calls
+  - stage 1a output has every required schema field for fixture turns
+    covering: plain text exchange, a Read tool call, a Bash tool call,
+    an MCP tool call with `outcome=denied`, and a turn with 12 similar
+    Reads that should cluster
+  - stage 1a cache hit on a re-run for the same turn results in zero
+    additional runner invocations
+  - failure of one turn's 1a call does not poison the description of
+    any other turn
+- **Depends on:** 8 (refactors that step's module)
+
+### Step 14 — Evaluator pipeline: stages 1b, 2, 3 · HARD
+
+- **Spec:** `docs/spec/03-agents/evaluator.md`,
+  `docs/spec/01-data-structures/evaluator-output.md`
+- **Contract:**
+  - Stage 1b: consumes stage 1a descriptions for a session, applies a
+    per-pass-window with overlap (window size and overlap are config
+    knobs; defaults TBD in implementation). Output is `per_turn_observations`
+    (spec schema) plus draft `pass_classifications`. Overlap regions
+    deduplicate so each turn is observed once.
+  - Stage 2: per-session refinement of pass classifications across all
+    of the session's 1b windows; resolves seam ambiguities; emits the
+    final `pass_classifications` for the session per the spec.
+  - Stage 3: per-session `session_narrative` per the spec; flagged with
+    a partial-completion marker if upstream stages dropped data for the
+    session (partial-with-flag failure policy).
+  - Each stage has its own cache layer under `.meta-harness/eval-cache/
+    stage-1b/`, `.../stage-2/`, `.../stage-3/`, keyed on the upstream
+    digests + model + prompt_version.
+- **Gate (HARD):** unit tests assert:
+  - stage 1b output schema matches the spec's per_turn_observation and
+    pass_classification shapes
+  - overlap dedup is correct: a fixture with 25-turn windows and 5-turn
+    overlap produces exactly one observation per turn across the
+    boundary
+  - stage 2 produces non-overlapping pass_classifications covering all
+    of a session's turns (no gaps, no overlaps)
+  - stage 3 produces exactly one narrative per session
+  - cache invalidation cascades correctly when upstream output changes
+  - one window failing in stage 1b for a session yields a
+    partial-completion flag on stage 3's narrative for that session,
+    not a session drop
+- **Depends on:** 13
+
+### Step 15 — Evaluator pipeline: stage 4 + orchestrator + cutover · HARD
+
+- **Spec:** `docs/spec/03-agents/evaluator.md`,
+  `docs/spec/01-data-structures/evaluator-output.md`,
+  `docs/spec/01-data-structures/gap-record.md`
+- **Contract:**
+  - Stage 4: cross-session gap observation production from the merged
+    stage 1a + stage 3 outputs across the corpus; updates gap records
+    via the existing side-effect path; honours append-only and the
+    matched-gap-id merge rule.
+  - Pipeline orchestrator: new `evaluate(sessions, repo, model, ...)`
+    runs 1a → 1b → 2 → 3 → 4, surfaces per-stage progress to the run
+    log under `.meta-harness/logs/eval/<timestamp>/stages/`, applies
+    partial-with-flag failure propagation, persists per-stage
+    checkpoints for cheap resume.
+  - Cutover: the old single-call `evaluate()` is replaced. The
+    pre-pipeline batching code (`_split_into_batches`,
+    `_chunk_large_sessions`, `_evaluate_batch`, the old
+    `_format_sessions_for_prompt` and `_build_batch_prompt`) is removed.
+- **Gate (HARD):** unit and integration tests assert:
+  - orchestrator sequences stages correctly with mocked stages
+  - partial failure in any stage propagates the flag through to the
+    final output's session_narratives without aborting the run
+  - cache-resume: re-running with same inputs makes zero model calls;
+    re-running with one new session only re-runs the new session's
+    1a/1b/2/3 and the corpus-level 4
+  - e2e integration test with all stages mocked to canned outputs
+    produces a 4-key document matching the spec schema
+  - regression: a static scan asserts the old batching code paths are
+    gone and the old `Human:`/`Assistant:` conversational prompt shape
+    is not present anywhere in the pipeline
+- **Depends on:** 14
+
+---
+
 ## Dependency DAG
 
 ```
@@ -298,6 +422,11 @@ dependencies. Steps are numbered to match `docs/IMPLEMENTATION.md` §
 
 **Critical path:** 1 → {2, 3, 4} → 6 → 7 → 8 → 9 → 10 → 11 → 12.
 **Floating:** 5 (any time before 8).
+
+**Post-0-1 refactor chain:** 8 → 13 → 14 → 15 (evaluator pipeline). Each
+step's gate must pass before the next begins. The refactor does not block
+or modify steps 9–12; the proposer and author continue to consume the
+spec-shaped evaluator output as before.
 
 ---
 
