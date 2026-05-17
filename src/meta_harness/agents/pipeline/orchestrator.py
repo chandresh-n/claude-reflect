@@ -1,0 +1,199 @@
+"""Evaluator pipeline orchestrator.
+
+``evaluate(sessions, repo, model, ...)`` sequences the five stages of
+the evaluator pipeline:
+
+  1a — per-turn description (per-turn cache).
+  1b — windowed per-turn observations + draft pass classifications
+       (per-session cache).
+  2  — per-session refinement of pass classifications.
+  3  — per-session narrative (carries the partial-completion flag).
+  4  — cross-session gap observations + gap-record side effects
+       (corpus cache).
+
+Per-stage caching means that a re-run with identical inputs makes
+ZERO model calls (every stage hits its per-stage cache). Adding one
+new session to the window only re-runs that session's 1a/1b/2/3 plus
+the corpus-level stage 4.
+
+Partial-with-flag failure propagation: failures inside stage 1a (one
+turn) and stage 1b (one window) are caught upstream; the orchestrator
+records ``partial_completion=True`` on the affected session's stage 3
+narrative without dropping the session.
+
+Progress for each invocation lands under
+``<repo>/.meta-harness/logs/eval/<UTC-timestamp>/stages/<stage_id>/``
+as a small JSON artefact per stage. The directory is created
+deterministically per run; callers can override ``log_dir``.
+
+Spec: docs/spec/03-agents/evaluator.md and
+docs/spec/01-data-structures/evaluator-output.md.
+"""
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import List, Optional
+
+from meta_harness.agents.pipeline.runner import ClaudeCLIRunner, Runner
+from meta_harness.agents.pipeline.stage_1a import describe_session_turns
+from meta_harness.agents.pipeline.stage_1b import observe_session_windows
+from meta_harness.agents.pipeline.stage_2 import refine_session_passes
+from meta_harness.agents.pipeline.stage_3 import summarize_session
+from meta_harness.agents.pipeline.stage_4 import identify_corpus_gaps
+from meta_harness.storage.session_logs import Session
+
+
+def _safe_id(identifier: str) -> str:
+    return identifier.replace("/", "_").replace(":", "_") or "anon"
+
+
+def _write_stage_artefact(stages_dir: Path, stage_id: str,
+                          identifier: str, payload: dict) -> None:
+    stage_dir = stages_dir / f"stage-{stage_id}"
+    stage_dir.mkdir(parents=True, exist_ok=True)
+    path = stage_dir / f"{_safe_id(identifier)}.json"
+    path.write_text(
+        json.dumps(payload, indent=2, sort_keys=False, default=str),
+        encoding="utf-8",
+    )
+
+
+def evaluate(
+    *,
+    sessions: List[Session],
+    repo: Path,
+    model: str = "claude-opus-4-7",
+    runner: Optional[Runner] = None,
+    write_gap_records: bool = True,
+    log_dir: Optional[Path] = None,
+) -> dict:
+    """Run the staged evaluator pipeline over ``sessions``.
+
+    Returns a document with exactly the four spec keys:
+    ``per_turn_observations``, ``pass_classifications``,
+    ``gap_observations``, ``session_narratives``.
+    """
+    if runner is None:
+        runner = ClaudeCLIRunner()
+
+    if log_dir is None:
+        run_ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
+        log_dir = repo / ".meta-harness" / "logs" / "eval" / run_ts
+    stages_dir = log_dir / "stages"
+    stages_dir.mkdir(parents=True, exist_ok=True)
+
+    per_turn_observations_all: list[dict] = []
+    pass_classifications_all: list[dict] = []
+    narratives_all: list[dict] = []
+
+    for session in sessions:
+        sid = session.session_id
+
+        # --- Stage 1a: per-turn description (per-turn failure isolated)
+        descriptions = describe_session_turns(
+            session=session, runner=runner, repo=repo, model=model,
+        )
+        stage_1a_failures = [
+            d for d in descriptions
+            if isinstance(d, dict) and d.get("_failed")
+        ]
+        valid_descs = [
+            d for d in descriptions
+            if isinstance(d, dict) and not d.get("_failed")
+        ]
+        _write_stage_artefact(stages_dir, "1a", sid, {
+            "session_id": sid,
+            "turn_count": len(session.turns),
+            "described_count": len(valid_descs),
+            "failed_turns": [d.get("turn_index") for d in stage_1a_failures],
+        })
+
+        # --- Stage 1b: windowed observations + draft pass classifications
+        windowed = observe_session_windows(
+            session_id=sid,
+            descriptions=valid_descs,
+            runner=runner,
+            repo=repo,
+            model=model,
+        )
+        session_observations: list[dict] = windowed.get(
+            "per_turn_observations", []
+        ) or []
+        drafts: list[dict] = windowed.get(
+            "draft_pass_classifications", []
+        ) or []
+        partial_completion = (
+            bool(stage_1a_failures)
+            or bool(windowed.get("partial_completion"))
+            or bool(windowed.get("failed_windows"))
+        )
+        _write_stage_artefact(stages_dir, "1b", sid, {
+            "session_id": sid,
+            "observation_count": len(session_observations),
+            "draft_count": len(drafts),
+            "partial_completion": partial_completion,
+            "failed_windows": windowed.get("failed_windows", []),
+        })
+
+        per_turn_observations_all.extend(session_observations)
+
+        # --- Stage 2: per-session pass refinement
+        # Skip the model call when there are no drafts (1b fully failed)
+        # — there is nothing for the refiner to refine.
+        if drafts:
+            classifications = refine_session_passes(
+                session_id=sid,
+                drafts=drafts,
+                total_turns=len(session.turns),
+                runner=runner,
+                repo=repo,
+                model=model,
+            )
+        else:
+            classifications = []
+        pass_classifications_all.extend(classifications)
+        _write_stage_artefact(stages_dir, "2", sid, {
+            "session_id": sid,
+            "pass_count": len(classifications),
+            "skipped": not drafts,
+        })
+
+        # --- Stage 3: per-session narrative (carries partial flag)
+        narrative = summarize_session(
+            session_id=sid,
+            per_turn_observations=session_observations,
+            pass_classifications=classifications,
+            gap_observations=[],
+            runner=runner,
+            repo=repo,
+            model=model,
+            partial_completion=partial_completion,
+        )
+        narratives_all.append(narrative)
+        _write_stage_artefact(stages_dir, "3", sid, {
+            "session_id": sid,
+            "partial_completion": partial_completion,
+        })
+
+    # --- Stage 4: corpus-level gap observations + gap-record side effects
+    gap_observations = identify_corpus_gaps(
+        per_turn_observations=per_turn_observations_all,
+        pass_classifications=pass_classifications_all,
+        session_narratives=narratives_all,
+        runner=runner,
+        repo=repo,
+        model=model,
+        write_gap_records=write_gap_records,
+    )
+    _write_stage_artefact(stages_dir, "4", "corpus", {
+        "gap_observation_count": len(gap_observations),
+    })
+
+    return {
+        "per_turn_observations": per_turn_observations_all,
+        "pass_classifications": pass_classifications_all,
+        "gap_observations": gap_observations,
+        "session_narratives": narratives_all,
+    }

@@ -293,97 +293,15 @@ def test_author_uses_runner(mock_popen: MagicMock) -> None:
     assert "claude" in cmd[0], "Should invoke 'claude' CLI"
 
 
-@patch("meta_harness.agents.evaluator.invoke_claude")
-def test_evaluator_uses_runner(mock_invoke: MagicMock) -> None:
-    """Evaluator must call invoke_claude (not anthropic SDK) and return 4-key output."""
+def test_evaluator_does_not_import_anthropic() -> None:
+    """Evaluator module must not import the anthropic SDK directly.
+
+    The evaluator entry point delegates to the pipeline orchestrator,
+    which talks to the claude CLI through the Runner abstraction.
+    """
     import importlib
     import inspect
-    from datetime import datetime, timezone
 
-    from meta_harness.storage.session_logs import Session, Turn
-
-    # Canned evaluator JSON that invoke_claude will return
-    canned = json.dumps({
-        "per_turn_observations": [
-            {
-                "session_id": "test-session-1",
-                "turn_index": 0,
-                "assessment": "User asked for help.",
-                "effort_signal": {
-                    "tokens_used": 500,
-                    "model": "claude-sonnet-4-6",
-                    "context_occupancy": 0.05,
-                    "tool_calls": [],
-                },
-                "flags": [],
-            }
-        ],
-        "pass_classifications": [
-            {
-                "session_id": "test-session-1",
-                "turn_range": {"start": 0, "end": 0},
-                "pass_type": "successful_one_shot",
-                "harness_gap_rationale": "None needed.",
-                "contributing_gaps": None,
-            }
-        ],
-        "gap_observations": [],
-        "session_narratives": [
-            {
-                "session_id": "test-session-1",
-                "outcome": "successful_and_accepted",
-                "pass_counts_by_type": {"successful_one_shot": 1},
-                "gaps_observed": [],
-                "narrative": "Single turn, successful.",
-            }
-        ],
-    })
-    mock_invoke.return_value = canned
-
-    # Build a minimal session
-    turn = Turn(
-        timestamp=datetime(2025, 1, 1, tzinfo=timezone.utc),
-        human_input="Hello",
-        assistant_response="Hi there",
-        tool_calls=[],
-        model="claude-sonnet-4-6",
-        input_tokens=100,
-        output_tokens=400,
-    )
-    import tempfile
-    from pathlib import Path
-
-    session = Session(
-        session_id="test-session-1",
-        start_time=datetime(2025, 1, 1, tzinfo=timezone.utc),
-        end_time=datetime(2025, 1, 1, 0, 5, tzinfo=timezone.utc),
-        file_path=Path("/tmp/fake-session.jsonl"),
-        turns=[turn],
-    )
-
-    with tempfile.TemporaryDirectory() as tmp:
-        repo = Path(tmp)
-        from meta_harness.agents.evaluator import evaluate
-
-        result = evaluate(
-            sessions=[session],
-            repo=repo,
-            write_gap_records=False,
-        )
-
-    # Assert invoke_claude was called
-    mock_invoke.assert_called_once()
-
-    # Assert the result has the expected 4 keys
-    expected_keys = {
-        "per_turn_observations",
-        "pass_classifications",
-        "gap_observations",
-        "session_narratives",
-    }
-    assert set(result.keys()) == expected_keys
-
-    # Assert anthropic is NOT imported at runtime in evaluator module
     evaluator_mod = importlib.import_module("meta_harness.agents.evaluator")
     source = inspect.getsource(evaluator_mod)
     assert "import anthropic" not in source, (
