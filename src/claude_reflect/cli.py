@@ -192,6 +192,25 @@ def build_parser() -> argparse.ArgumentParser:
         "--verbose", action="store_true", default=False,
         help="Enable streamed output and tool-call traces.",
     )
+    review_p.add_argument(
+        "--fixtures-dir", dest="fixtures_dir", default=None,
+        help=(
+            "Run against synthetic session JSONLs in this directory "
+            "instead of ~/.claude/projects/. KB state is written under "
+            "<fixtures-dir>/.claude-reflect/, isolated from your real KB. "
+            "Ignores --range / --session-id / --pick; loads every "
+            "*.jsonl in the dir as the session window."
+        ),
+    )
+    review_p.add_argument(
+        "--no-cache", dest="no_cache", action="store_true", default=False,
+        help=(
+            "Bypass the per-stage evaluator cache: every stage re-invokes "
+            "its agent even if the input is unchanged. Writes to the cache "
+            "still happen so later runs benefit. Use when iterating on "
+            "agent code where prompt_version has not been bumped."
+        ),
+    )
 
     # status
     status_p = sub.add_parser("status", help="Report knowledge-base state.")
@@ -221,6 +240,8 @@ class ReviewCommand:
         resume_run_id: Optional[str] = None,
         session_ids: Optional[List[str]] = None,
         pick: bool = False,
+        fixtures_dir: Optional[Path] = None,
+        no_cache: bool = False,
     ):
         self.repo = repo
         self.date_range = date_range
@@ -228,9 +249,23 @@ class ReviewCommand:
         self.resume_run_id = resume_run_id
         self.session_ids = session_ids
         self.pick = pick
+        self.fixtures_dir = fixtures_dir
+        self.no_cache = no_cache
 
     def execute(self) -> dict:
         """Run the review pass and return a result dict."""
+        # --no-cache: signal to StageCache.get() to ignore existing entries.
+        # Writes still occur so subsequent runs benefit.
+        if self.no_cache:
+            os.environ["CLAUDE_REFLECT_NO_CACHE"] = "1"
+
+        # --fixtures-dir: rebase the run onto a synthetic session directory.
+        # KB state writes to <fixtures-dir>/.claude-reflect/, isolated from
+        # the user's real KB. Session selection becomes "all JSONLs in dir";
+        # --range, --session-id, --pick are bypassed.
+        if self.fixtures_dir:
+            self.repo = self.fixtures_dir
+
         # Phase 1: auto-setup on fresh repo
         kb_dir = self.repo / ".claude-reflect"
         if not kb_dir.is_dir():
@@ -250,8 +285,15 @@ class ReviewCommand:
         # Load config for model choices
         config = _load_config(self.repo)
 
-        # Collect sessions: either by explicit --session-id list, or by --range.
-        if self.session_ids:
+        # Collect sessions: fixtures-dir > --session-id > --range.
+        if self.fixtures_dir:
+            self._log(
+                f"Starting review pass (fixtures-dir: {self.fixtures_dir})..."
+            )
+            reader = SessionLogReader(self.fixtures_dir)
+            sessions = reader.list_all_sessions()
+            date_range_dict = _date_range_from_sessions(sessions)
+        elif self.session_ids:
             self._log(
                 f"Starting review pass (session_ids: {', '.join(self.session_ids)})..."
             )
@@ -490,6 +532,18 @@ def main(argv: Optional[List[str]] = None) -> None:
             parser.error("--session-id and --range cannot be used together")
         if args.session_ids and args.pick:
             parser.error("--pick only applies when selecting by --range")
+        # --fixtures-dir is a self-contained mode: it supplies the sessions
+        # AND the KB root, so other selectors don't make sense alongside it.
+        if args.fixtures_dir and (args.session_ids or args.pick or args.range):
+            parser.error(
+                "--fixtures-dir cannot be combined with --range / --session-id / --pick"
+            )
+
+        fixtures_dir_path = (
+            Path(args.fixtures_dir).resolve() if args.fixtures_dir else None
+        )
+        if fixtures_dir_path is not None and not fixtures_dir_path.is_dir():
+            parser.error(f"--fixtures-dir does not exist or is not a directory: {fixtures_dir_path}")
 
         cmd = ReviewCommand(
             repo=repo,
@@ -498,6 +552,8 @@ def main(argv: Optional[List[str]] = None) -> None:
             resume_run_id=args.resume,
             session_ids=args.session_ids,
             pick=args.pick,
+            fixtures_dir=fixtures_dir_path,
+            no_cache=args.no_cache,
         )
         result = cmd.execute()
         if result:

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 from typing import Any, Optional
 
@@ -57,6 +58,12 @@ class StageCache:
         return self._dir / f"{key}.json"
 
     def get(self, key: str) -> Optional[Any]:
+        # CLAUDE_REFLECT_NO_CACHE forces a cache miss across every stage,
+        # honoured here so the CLI's --no-cache flag does not need to thread
+        # an extra parameter through every stage signature. Writes are
+        # unaffected so later runs still benefit from this run's outputs.
+        if os.environ.get("CLAUDE_REFLECT_NO_CACHE"):
+            return None
         path = self._path_for(key)
         if not path.is_file():
             return None
