@@ -1,5 +1,5 @@
 """
-Run loop orchestration — Step 11 of the claude-reflect build.
+Run loop orchestration
 
 Spec ref: docs/spec/04-processes/run-loop.md
 

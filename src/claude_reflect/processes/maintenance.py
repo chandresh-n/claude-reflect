@@ -1,5 +1,5 @@
 """
-Maintenance process — Step 7 of the claude-reflect build.
+Maintenance process
 
 Spec ref: docs/spec/04-processes/maintenance.md
 

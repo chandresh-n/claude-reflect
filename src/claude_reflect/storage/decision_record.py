@@ -1,5 +1,5 @@
 """
-Decision record read/write — Step 3 of the claude-reflect build.
+Decision record read/write
 
 Spec ref: docs/spec/01-data-structures/decision-record.md
 

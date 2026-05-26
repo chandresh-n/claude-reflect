@@ -1,6 +1,6 @@
 """
 Tests for the post-build session-selection ergonomics:
-  - `--session_id` flag on `review` (repeatable, mutex with --range/--pick).
+  - `--session-id` flag on `review` (repeatable, mutex with --range/--pick).
   - `--pick` flag on `review` (interactive picker over the date range).
 
 These are not part of any PLAN.md step; they're CLI ergonomics added on top
@@ -78,7 +78,7 @@ class TestArgparseSurface:
     def test_session_id_is_repeatable(self) -> None:
         parser = build_parser()
         args = parser.parse_args(
-            ["review", "--session_id", "abc", "--session_id", "def"]
+            ["review", "--session-id", "abc", "--session-id", "def"]
         )
         assert args.session_ids == ["abc", "def"]
 
@@ -110,7 +110,7 @@ class TestMainMutex:
             main([
                 "review",
                 "--repo", str(tmp_path),
-                "--session_id", "abc",
+                "--session-id", "abc",
                 "--range", "last 7 days",
             ])
 
@@ -120,7 +120,7 @@ class TestMainMutex:
             main([
                 "review",
                 "--repo", str(tmp_path),
-                "--session_id", "abc",
+                "--session-id", "abc",
                 "--pick",
             ])
 
@@ -136,8 +136,8 @@ class TestMainMutex:
             main([
                 "review",
                 "--repo", str(tmp_path),
-                "--session_id", "abc",
-                "--session_id", "def",
+                "--session-id", "abc",
+                "--session-id", "def",
             ])
 
             kwargs = MockReview.call_args.kwargs
@@ -450,7 +450,7 @@ class TestPresentSessionPicker:
 
 
 # ---------------------------------------------------------------------------
-# ReviewCommand wiring (does --session_id / --pick reach _collect_*?)
+# ReviewCommand wiring (does --session-id / --pick reach _collect_*?)
 # ---------------------------------------------------------------------------
 
 

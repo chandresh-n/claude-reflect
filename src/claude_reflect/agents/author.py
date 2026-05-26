@@ -1,5 +1,5 @@
 """
-Author agent — Step 10 of the claude-reflect build.
+Author agent
 
 Takes a single proposer intent and produces a concrete git diff on a
 proposal branch, or returns author_failed honestly. One author is

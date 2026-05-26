@@ -92,16 +92,19 @@ Shows a list of recent sessions and lets you pick one or more.
 
 ### What the run produces
 
-Each run writes to `.claude-reflect/runs/<run_id>/`:
+Each run writes two files under `.claude-reflect/runs/`:
 
-- `proposals.md` — the human-review batch (plain markdown, with diffs)
-- `evaluator.json` — raw evaluator output
-- `proposer.json` — raw proposer output
-- `author/` — per-proposal diff files
-- `transcript.log` — agent transcripts (if `save_full_transcripts: true`)
+- `<run_id>-batch.md` — the human-review batch (plain markdown, with
+  inline diffs). This is the file you actually review.
+- `<run_id>.json` — serialized run state (phase, pending proposals,
+  decisions) used for `--resume` and crash recovery.
 
-Reviewing happens against `proposals.md` — read it, decide on each
-proposal, and answer the prompts.
+Author diffs live on temporary git branches (`claude-reflect/proposal/<id>`),
+not as files in the run directory. The review batch shows each diff
+inline by running `git diff` against the proposal branch.
+
+If `logging.save_full_transcripts: true`, raw agent transcripts are
+written under `.claude-reflect/logs/` (separate from the per-run dir).
 
 ---
 
@@ -308,7 +311,8 @@ output by `python3.11 -m site --user-base`/`bin` to your PATH.
 
 **`claude` not on PATH**
 claude-reflect shells out to `claude -p` to drive its agents. Install
-Claude Code and run `claude auth login` first.
+[Claude Code](https://claude.com/claude-code) and authenticate it by
+running `claude` interactively once (it'll walk you through `/login`).
 
 **A run hangs at the evaluator phase**
 Re-run with `--verbose` to see agent output and tool-call traces. If

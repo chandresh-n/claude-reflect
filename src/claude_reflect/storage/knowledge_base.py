@@ -130,8 +130,7 @@ def setup(repo: Path) -> None:
         index_md.write_text("# Summary index\n", encoding="utf-8")
 
     # -----------------------------------------------------------------------
-    # config.yaml — written once; never overwritten (idempotency)
-    # Fields: every key from IMPLEMENTATION.md § "Configuration file".
+    # config.yaml — written once on first setup; never overwritten (idempotency)
     # -----------------------------------------------------------------------
     config_path = kb / "config.yaml"
     if not config_path.exists():

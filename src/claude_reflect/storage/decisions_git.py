@@ -1,5 +1,5 @@
 """
-Decisions git branch operations — Step 3 of the claude-reflect build.
+Decisions git branch operations
 
 Spec ref: docs/spec/02-storage/decisions-git.md
 

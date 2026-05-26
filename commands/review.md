@@ -21,7 +21,7 @@ Run a `claude-reflect` review against the current repository, then walk the user
    ```
    Stream output as it runs. Reviews can take several minutes — that's expected.
 
-4. When the run finishes, the tool writes a proposal batch (plain markdown) to `.claude-reflect/runs/<run_id>/proposals.md`. Open it, summarize the proposals, and present them one at a time. For each, ask the user to mark **Accept**, **Reject**, or **Defer**.
+4. When the run finishes, the tool writes a proposal batch (plain markdown) to `.claude-reflect/runs/<run_id>-batch.md`. Open it, summarize the proposals, and present them one at a time. For each, ask the user to mark **Accept**, **Reject**, or **Defer**.
 
 5. If a run is interrupted, the user can resume with:
    ```bash

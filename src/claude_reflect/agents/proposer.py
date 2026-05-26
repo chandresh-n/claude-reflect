@@ -1,5 +1,5 @@
 """
-Proposer agent — Step 9 of the claude-reflect build.
+Proposer agent
 
 Reads evaluator output and the full canonical knowledge base (gap records,
 decisions, archive entries) — NOT the summary layer for authoritative state.

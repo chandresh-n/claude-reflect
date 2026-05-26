@@ -1,5 +1,5 @@
 """
-Gap record read/write — Step 2 of the claude-reflect build.
+Gap record read/write
 
 Spec ref: docs/spec/01-data-structures/gap-record.md
 

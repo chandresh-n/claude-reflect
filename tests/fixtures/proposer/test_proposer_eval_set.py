@@ -36,9 +36,9 @@ def evaluator_output():
 def canned_batch():
     """Load a canned proposer batch output.
 
-    This fixture is populated by the proposer implementation in Session B.
-    For Session A it does not exist yet — the test validates schema structure
-    against a minimal synthetic batch to confirm the runner works.
+    Falls back to a minimal synthetic batch when canned_proposal_batch.json
+    isn't present — that lets the schema-runner tests validate the
+    fixture pipeline without depending on a real agent invocation.
     """
     canned_path = FIXTURES_DIR / "canned_proposal_batch.json"
     if not canned_path.exists():

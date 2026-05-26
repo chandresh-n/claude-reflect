@@ -1,5 +1,5 @@
 """
-CLI and skill wrapper — Step 12 of the claude-reflect build.
+CLI and skill wrapper
 
 Spec refs:
   - docs/spec/05-interfaces/skill-invocation.md
@@ -171,7 +171,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Date range (e.g. 'last 7 days', '2026-04-01 to 2026-04-07').",
     )
     review_p.add_argument(
-        "--session_id", dest="session_ids", action="append", default=None,
+        "--session-id", dest="session_ids", action="append", default=None,
         help=(
             "Pick a specific session by id (repeatable). "
             "Mutually exclusive with --range."
@@ -250,7 +250,7 @@ class ReviewCommand:
         # Load config for model choices
         config = _load_config(self.repo)
 
-        # Collect sessions: either by explicit --session_id list, or by --range.
+        # Collect sessions: either by explicit --session-id list, or by --range.
         if self.session_ids:
             self._log(
                 f"Starting review pass (session_ids: {', '.join(self.session_ids)})..."
@@ -280,7 +280,7 @@ class ReviewCommand:
         if not sessions and not self.resume_run_id:
             if self.session_ids:
                 self._log(
-                    "No matching sessions found for the given --session_id value(s)."
+                    "No matching sessions found for the given --session-id value(s)."
                 )
             else:
                 self._log(
@@ -484,10 +484,10 @@ def main(argv: Optional[List[str]] = None) -> None:
     repo = Path(args.repo) if args.repo else Path.cwd()
 
     if args.subcommand == "review":
-        # --session_id and --range are mutually exclusive: one names specific
+        # --session-id and --range are mutually exclusive: one names specific
         # sessions, the other names a window. Mixing them is ambiguous.
         if args.session_ids and args.range:
-            parser.error("--session_id and --range cannot be used together")
+            parser.error("--session-id and --range cannot be used together")
         if args.session_ids and args.pick:
             parser.error("--pick only applies when selecting by --range")
 
