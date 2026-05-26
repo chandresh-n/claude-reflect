@@ -53,7 +53,7 @@ There are two ways to install claude-reflect: as a Claude Code plugin
 ### Option A — Claude Code plugin (recommended)
 
 ```bash
-git clone https://github.com/chandresh/claude-reflect.git
+git clone https://github.com/chandresh-n/claude-reflect.git
 ```
 
 Then in Claude Code:
@@ -74,7 +74,7 @@ shell out to. After that you have four commands:
 ### Option B — standalone CLI
 
 ```bash
-git clone https://github.com/chandresh/claude-reflect.git
+git clone https://github.com/chandresh-n/claude-reflect.git
 cd claude-reflect
 ./scripts/setup.sh
 ```

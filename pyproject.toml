@@ -27,9 +27,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/chandresh/claude-reflect"
-Repository = "https://github.com/chandresh/claude-reflect"
-Issues = "https://github.com/chandresh/claude-reflect/issues"
+Homepage = "https://github.com/chandresh-n/claude-reflect"
+Repository = "https://github.com/chandresh-n/claude-reflect"
+Issues = "https://github.com/chandresh-n/claude-reflect/issues"
 
 [project.scripts]
 claude-reflect = "claude_reflect.cli:main"
