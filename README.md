@@ -1,8 +1,5 @@
 # claude-reflect
 
-**Status: v0.1 alpha.** Working end-to-end, but expect rough edges. Schemas
-and CLI flags may shift before v1.
-
 A reflective analysis tool for [Claude Code](https://claude.com/claude-code).
 It reads your Claude Code session logs, identifies recurring quality and
 efficiency patterns, and proposes configuration changes — which you review
@@ -88,18 +85,40 @@ Either install path produces the same `claude-reflect` shell command:
 ```bash
 claude-reflect --help
 claude-reflect status
-claude-reflect review --range "last 7 days"
 claude-reflect maintenance
+```
+
+`claude-reflect review` has three ways to pick which sessions to analyze:
+
+```bash
+# By date range — natural phrases or explicit ranges
+claude-reflect review --range "yesterday"
+claude-reflect review --range "2026-04-01 to 2026-04-07"
+
+# By specific session id (repeatable)
+claude-reflect review --session-id <session_id>
+
+# Interactive picker over recent sessions
+claude-reflect review --pick
 ```
 
 ---
 
 ## First run
 
-In any repo where you'd like to start the feedback loop:
+In any repo where you'd like to start the feedback loop, run a review.
+You can target sessions three ways:
 
 ```bash
-claude-reflect review --range "last 7 days"
+# A date range — natural phrases or explicit windows
+claude-reflect review --range "yesterday"
+claude-reflect review --range "2026-04-01 to 2026-04-07"
+
+# A specific session by id (repeatable)
+claude-reflect review --session-id <session_id>
+
+# Interactive picker — choose from recent sessions
+claude-reflect review --pick
 ```
 
 On first invocation in a repo, claude-reflect automatically initializes:
