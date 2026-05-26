@@ -305,9 +305,13 @@ Full spec: [docs/spec/](spec/).
 ## Troubleshooting
 
 **`claude-reflect: command not found`**
-The pip user-scripts directory may not be on PATH. Fall back to
-`python3.11 -m claude_reflect.cli <subcommand>`, or add the directory
-output by `python3.11 -m site --user-base`/`bin` to your PATH.
+If `scripts/setup.sh` went down the venv-fallback path, it added a
+`claude-reflect` alias to `~/.bashrc` and `~/.zshrc`. Open a new shell
+or `source` the rc file for your shell. If you went down the system
+pip path and the pip user-scripts dir isn't on PATH, you can either
+add it (run `python3.11 -m site --user-base` and append `/bin` to your
+PATH) or invoke the tool via `python3.11 -m claude_reflect.cli
+<subcommand>`.
 
 **`claude` not on PATH**
 claude-reflect shells out to `claude -p` to drive its agents. Install
@@ -320,5 +324,6 @@ the underlying Claude session is the issue, kill the run and let
 `--resume` skip ahead (only works post-Phase-7; otherwise restart).
 
 **Tests fail with import errors**
-Reinstall the package: `python3.11 -m pip install -e ".[dev]"` from
-the repo root.
+Re-run `./scripts/setup.sh` from the repo root — it'll reinstall the
+package against whichever Python environment (system or venv) was used
+the first time.

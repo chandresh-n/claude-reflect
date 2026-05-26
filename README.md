@@ -44,43 +44,27 @@ Claude Code OAuth session through `claude -p`.
 
 ## Install
 
-There are two ways to install claude-reflect: as a Claude Code plugin
-(recommended), or as a standalone CLI.
-
-### Option A — Claude Code plugin (recommended)
-
-```bash
-git clone https://github.com/chandresh-n/claude-reflect.git
-```
-
-Then in Claude Code:
-
-```
-/plugin install /absolute/path/to/claude-reflect
-/claude-reflect:setup
-```
-
-The setup command installs the Python backend that the plugin's commands
-shell out to. After that you have four commands:
-
-- `/claude-reflect:setup` — install or upgrade the Python backend
-- `/claude-reflect:review` — run a reflective pass over recent sessions
-- `/claude-reflect:status` — report knowledge-base state
-- `/claude-reflect:maintenance` — manually trigger maintenance
-
-### Option B — standalone CLI
-
 ```bash
 git clone https://github.com/chandresh-n/claude-reflect.git
 cd claude-reflect
 ./scripts/setup.sh
 ```
 
-The setup script verifies Python and pip, installs claude-reflect in
-editable mode, and runs the test suite. Use `--prod` to skip dev
-dependencies and the test run.
+The setup script checks Python 3.11+ / pip / git, then:
 
-Either install path produces the same `claude-reflect` shell command:
+1. **Tries a direct install first** (`pip install -e .` against your
+   system Python). If your Python allows it, that's the end of the story
+   and `claude-reflect` is on your PATH.
+2. **Falls back to a venv if the direct install fails** — most commonly
+   because modern Python distributions (Homebrew, Debian/Ubuntu)
+   externally-manage the system site-packages (PEP 668). The fallback
+   creates a venv at `.venv/` inside the clone, installs into it, and
+   adds a `claude-reflect` alias to `~/.bashrc` and `~/.zshrc` so the
+   command is available globally in any new shell.
+
+Pass `--prod` to skip dev dependencies and the test run.
+
+After install, open a new shell (or `source ~/.zshrc` / `~/.bashrc`) and:
 
 ```bash
 claude-reflect --help
