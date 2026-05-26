@@ -1,13 +1,34 @@
+# --- OS / editor ---
 .DS_Store
+
+# --- Python ---
 __pycache__/
 *.py[cod]
 *.egg-info/
-dist/
-.pytest_cache/
 *.egg
+dist/
+build/
 .eggs/
+.pytest_cache/
+.venv/
+venv/
 
-# Meta-harness local cache: regenerable evaluator output, both
-# the current layout (sessions/, batches/) and any orphan content-hash
-# dirs from earlier cache schemas.
-.meta-harness/eval-cache/
+# --- Tool runtime data (user-generated, never ship) ---
+.meta-harness/
+.claude-reflect/
+
+# --- Local Claude Code settings (per-user permission allowlists) ---
+.claude/settings.local.json
+
+# --- Internal build / planning artifacts (not shipped to users) ---
+CLAUDE.md
+file_navigation.md
+docs/PLAN.md
+docs/SESSION_PROMPTS.md
+docs/PROMPT_ITERATION.md
+docs/IMPLEMENTATION.md
+docs/PRD.pdf
+docs/superpowers/
+
+# --- Source-bundle archives (build inputs, not redistributable) ---
+_archive/
