@@ -11,14 +11,14 @@ described in `docs/IMPLEMENTATION.md`.
 
 ## Likely contents
 
-- `setup.sh` — initialize `.meta-harness/` in a target repo, create the
+- `setup.sh` — initialize `.claude-reflect/` in a target repo, create the
   decisions branch, write default `config.yaml`. Called by Phase 1 of the
   run loop. Spec: `docs/spec/04-processes/run-loop.md` and
   `docs/spec/02-storage/knowledge-base.md`.
 - `walk_session_logs.sh` — fast traversal of Claude Code's session log
   directory, filter by date range. Spec: `docs/spec/02-storage/session-logs.md`.
 - `git_decisions.sh` — branch and commit helpers for the
-  `meta-harness/decisions` branch and `meta-harness/proposal/<id>` branches.
+  `claude-reflect/decisions` branch and `claude-reflect/proposal/<id>` branches.
   Spec: `docs/spec/02-storage/decisions-git.md`.
 - `jq` snippets and other JSON-mangling utilities used by the above.
 

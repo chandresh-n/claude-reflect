@@ -3,7 +3,7 @@ Archive entry read/write.
 
 Spec: docs/spec/01-data-structures/archive-entry.md
 
-One JSON file per entry under .meta-harness/archive/<entry_id>.json.
+One JSON file per entry under .claude-reflect/archive/<entry_id>.json.
 Enforces:
   - Exactly one active configuration at all times.
   - append-only: entries are never deleted.
@@ -32,7 +32,7 @@ _FORBIDDEN_FIELDS = ("quality_score", "effort_score", "score", "priority", "best
 
 
 def _archive_dir(base_dir: Path) -> Path:
-    d = base_dir / ".meta-harness" / "archive"
+    d = base_dir / ".claude-reflect" / "archive"
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -68,7 +68,7 @@ def _read_raw(entry_id: str, base_dir: Path) -> dict:
 
 def _active_entry_ids(base_dir: Path) -> list[str]:
     """Return IDs of all entries whose active_at.end is None."""
-    archive_dir = base_dir / ".meta-harness" / "archive"
+    archive_dir = base_dir / ".claude-reflect" / "archive"
     if not archive_dir.exists():
         return []
     active = []

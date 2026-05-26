@@ -30,8 +30,8 @@ import pathlib
 import pytest
 
 # This import drives the gate: all tests fail with ImportError until
-# src/meta_harness/storage/session_logs.py is implemented.
-from meta_harness.storage.session_logs import (
+# src/claude_reflect/storage/session_logs.py is implemented.
+from claude_reflect.storage.session_logs import (
     Session,
     SessionLogReader,
     ToolCall,
@@ -414,7 +414,7 @@ class TestDateRangeFiltering:
 
 class TestReadOnlyEnforcement:
     """
-    Reads the source of meta_harness.storage.session_logs using importlib and
+    Reads the source of claude_reflect.storage.session_logs using importlib and
     ast, then asserts that no write-mode file operations appear in the module.
 
     This is a static audit, not a runtime test, so it works without invoking
@@ -423,10 +423,10 @@ class TestReadOnlyEnforcement:
 
     @staticmethod
     def _source() -> str:
-        spec = importlib.util.find_spec("meta_harness.storage.session_logs")
+        spec = importlib.util.find_spec("claude_reflect.storage.session_logs")
         assert spec is not None, (
-            "meta_harness.storage.session_logs not found — "
-            "implement src/meta_harness/storage/session_logs.py first"
+            "claude_reflect.storage.session_logs not found — "
+            "implement src/claude_reflect/storage/session_logs.py first"
         )
         assert spec.origin is not None
         return pathlib.Path(spec.origin).read_text()

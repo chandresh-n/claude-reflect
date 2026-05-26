@@ -20,12 +20,12 @@ from pathlib import Path
 
 import pytest
 
-from meta_harness.storage.gap_record import (
+from claude_reflect.storage.gap_record import (
     create_gap_record,
     read_gap_record,
     update_gap_record,
 )
-from meta_harness.storage.knowledge_base import setup
+from claude_reflect.storage.knowledge_base import setup
 
 
 # ---------------------------------------------------------------------------
@@ -77,10 +77,10 @@ class TestRoundtrip:
             )
 
     def test_gap_record_file_exists_on_disk(self, kb_repo):
-        """Backing JSON file must be at .meta-harness/gaps/<gap_id>.json."""
+        """Backing JSON file must be at .claude-reflect/gaps/<gap_id>.json."""
         created = create_gap_record(kb_repo, VALID_GAP_RECORD.copy())
         gap_id = created["identifier"]
-        expected_path = kb_repo / ".meta-harness" / "gaps" / f"{gap_id}.json"
+        expected_path = kb_repo / ".claude-reflect" / "gaps" / f"{gap_id}.json"
         assert expected_path.is_file(), (
             f"Gap record file not found at {expected_path}"
         )
@@ -89,7 +89,7 @@ class TestRoundtrip:
         """The backing file must be valid JSON."""
         created = create_gap_record(kb_repo, VALID_GAP_RECORD.copy())
         gap_id = created["identifier"]
-        path = kb_repo / ".meta-harness" / "gaps" / f"{gap_id}.json"
+        path = kb_repo / ".claude-reflect" / "gaps" / f"{gap_id}.json"
         with open(path) as f:
             on_disk = json.load(f)
         assert isinstance(on_disk, dict)
@@ -118,7 +118,7 @@ class TestRoundtrip:
         """The identifier in the returned record must match the on-disk filename."""
         created = create_gap_record(kb_repo, VALID_GAP_RECORD.copy())
         gap_id = created["identifier"]
-        path = kb_repo / ".meta-harness" / "gaps" / f"{gap_id}.json"
+        path = kb_repo / ".claude-reflect" / "gaps" / f"{gap_id}.json"
         with open(path) as f:
             on_disk = json.load(f)
         assert on_disk["identifier"] == gap_id
@@ -274,7 +274,7 @@ class TestAppendOnly:
 
     def test_no_delete_function_in_public_api(self):
         """The gap_record module must not export any delete or remove function."""
-        import meta_harness.storage.gap_record as module
+        import claude_reflect.storage.gap_record as module
         api_names = [name for name in dir(module) if not name.startswith("_")]
         forbidden = [
             name for name in api_names
@@ -289,7 +289,7 @@ class TestAppendOnly:
         """Updating a record must not remove or replace the backing file."""
         created = create_gap_record(kb_repo, VALID_GAP_RECORD.copy())
         gap_id = created["identifier"]
-        original_path = kb_repo / ".meta-harness" / "gaps" / f"{gap_id}.json"
+        original_path = kb_repo / ".claude-reflect" / "gaps" / f"{gap_id}.json"
         update_gap_record(kb_repo, gap_id, {"characterization": "Refined description."})
         assert original_path.is_file()
 
@@ -307,8 +307,8 @@ class TestAppendOnly:
             assert record["identifier"] == gap_id
 
     def test_gap_record_count_grows_monotonically(self, kb_repo):
-        """Each create adds exactly one new file under .meta-harness/gaps/."""
-        gaps_dir = kb_repo / ".meta-harness" / "gaps"
+        """Each create adds exactly one new file under .claude-reflect/gaps/."""
+        gaps_dir = kb_repo / ".claude-reflect" / "gaps"
 
         before = len(list(gaps_dir.glob("*.json")))
         data = VALID_GAP_RECORD.copy()

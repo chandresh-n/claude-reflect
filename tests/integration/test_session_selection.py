@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from meta_harness.cli import (
+from claude_reflect.cli import (
     ReviewCommand,
     _collect_sessions_by_id,
     _date_range_from_sessions,
@@ -28,7 +28,7 @@ from meta_harness.cli import (
     build_parser,
     main,
 )
-from meta_harness.storage.session_logs import Session
+from claude_reflect.storage.session_logs import Session
 
 
 def _init_git_repo(path: Path) -> None:
@@ -128,7 +128,7 @@ class TestMainMutex:
         self, tmp_path: Path
     ) -> None:
         _init_git_repo(tmp_path)
-        with patch("meta_harness.cli.ReviewCommand") as MockReview:
+        with patch("claude_reflect.cli.ReviewCommand") as MockReview:
             instance = MagicMock()
             instance.execute.return_value = {"status": "complete"}
             MockReview.return_value = instance
@@ -148,7 +148,7 @@ class TestMainMutex:
         self, tmp_path: Path
     ) -> None:
         _init_git_repo(tmp_path)
-        with patch("meta_harness.cli.ReviewCommand") as MockReview:
+        with patch("claude_reflect.cli.ReviewCommand") as MockReview:
             instance = MagicMock()
             instance.execute.return_value = {"status": "complete"}
             MockReview.return_value = instance
@@ -314,7 +314,7 @@ class TestCollectSessionsById:
         )
 
         monkeypatch.setattr(
-            "meta_harness.cli._find_session_log_dir", lambda repo: log_dir
+            "claude_reflect.cli._find_session_log_dir", lambda repo: log_dir
         )
 
         sessions = _collect_sessions_by_id(tmp_path, ["session-xyz"])
@@ -335,7 +335,7 @@ class TestCollectSessionsById:
         )
 
         monkeypatch.setattr(
-            "meta_harness.cli._find_session_log_dir", lambda repo: log_dir
+            "claude_reflect.cli._find_session_log_dir", lambda repo: log_dir
         )
 
         sessions = _collect_sessions_by_id(tmp_path, ["session-xyz", "nope"])
@@ -347,7 +347,7 @@ class TestCollectSessionsById:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(
-            "meta_harness.cli._find_session_log_dir", lambda repo: None
+            "claude_reflect.cli._find_session_log_dir", lambda repo: None
         )
         assert _collect_sessions_by_id(tmp_path, ["any"]) == []
 
@@ -456,7 +456,7 @@ class TestPresentSessionPicker:
 
 class TestReviewCommandWiring:
     def _setup_kb(self, repo: Path) -> None:
-        from meta_harness.storage.knowledge_base import setup as kb_setup
+        from claude_reflect.storage.knowledge_base import setup as kb_setup
         kb_setup(repo)
 
     def test_session_ids_path_skips_range_collection(
@@ -476,10 +476,10 @@ class TestReviewCommandWiring:
             return []
 
         monkeypatch.setattr(
-            "meta_harness.cli._collect_sessions_by_id", fake_by_id
+            "claude_reflect.cli._collect_sessions_by_id", fake_by_id
         )
         monkeypatch.setattr(
-            "meta_harness.cli._collect_sessions", fake_by_range
+            "claude_reflect.cli._collect_sessions", fake_by_range
         )
 
         cmd = ReviewCommand(
@@ -517,7 +517,7 @@ class TestReviewCommandWiring:
         )
 
         monkeypatch.setattr(
-            "meta_harness.cli._collect_sessions",
+            "claude_reflect.cli._collect_sessions",
             lambda repo, dr, verbose=False: [a, b],
         )
 
@@ -529,7 +529,7 @@ class TestReviewCommandWiring:
             return [sessions[0]]
 
         monkeypatch.setattr(
-            "meta_harness.cli._present_session_picker", fake_picker
+            "claude_reflect.cli._present_session_picker", fake_picker
         )
 
         cmd = ReviewCommand(
@@ -555,7 +555,7 @@ class TestReviewCommandWiring:
         self._setup_kb(tmp_path)
 
         monkeypatch.setattr(
-            "meta_harness.cli._collect_sessions",
+            "claude_reflect.cli._collect_sessions",
             lambda repo, dr, verbose=False: [],
         )
 
@@ -566,7 +566,7 @@ class TestReviewCommandWiring:
             return sessions
 
         monkeypatch.setattr(
-            "meta_harness.cli._present_session_picker", fake_picker
+            "claude_reflect.cli._present_session_picker", fake_picker
         )
 
         cmd = ReviewCommand(
@@ -590,7 +590,7 @@ class TestReviewCommandWiring:
         self._setup_kb(tmp_path)
 
         monkeypatch.setattr(
-            "meta_harness.cli._collect_sessions",
+            "claude_reflect.cli._collect_sessions",
             lambda repo, dr, verbose=False: [],
         )
 

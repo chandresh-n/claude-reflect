@@ -9,7 +9,7 @@ effects to the gap-record knowledge base.
 
 Pins (HARD — from docs/PLAN.md Step 15):
 
-  - module is importable from ``meta_harness.agents.pipeline.stage_4``
+  - module is importable from ``claude_reflect.agents.pipeline.stage_4``
     and exposes ``identify_corpus_gaps`` and ``STAGE_4_PROMPT_VERSION``
   - output schema matches the spec's gap_observation shape
     (matched_gap_id, characterization, kind, evidence_additions)
@@ -18,7 +18,7 @@ Pins (HARD — from docs/PLAN.md Step 15):
   - matched obs ⇒ existing gap record's evidence is APPENDED
     (append-only); pre-existing evidence is preserved
   - gap records are never deleted by stage 4 (append-only invariant)
-  - cache lives under ``.meta-harness/eval-cache/stage-4/`` and the
+  - cache lives under ``.claude-reflect/eval-cache/stage-4/`` and the
     key cascades when any upstream input changes
   - no scalar grades anywhere in the output schema
   - pipeline module guardrail: only ``runner.py`` imports
@@ -152,13 +152,13 @@ def _make_corpus_inputs(session_ids: list[str]) -> dict:
 
 
 def test_stage_4_module_importable() -> None:
-    from meta_harness.agents.pipeline.stage_4 import (  # type: ignore  # noqa: F401
+    from claude_reflect.agents.pipeline.stage_4 import (  # type: ignore  # noqa: F401
         identify_corpus_gaps,
     )
 
 
 def test_stage_4_exposes_prompt_version() -> None:
-    from meta_harness.agents.pipeline import stage_4  # type: ignore
+    from claude_reflect.agents.pipeline import stage_4  # type: ignore
 
     assert hasattr(stage_4, "STAGE_4_PROMPT_VERSION")
     assert isinstance(stage_4.STAGE_4_PROMPT_VERSION, str)
@@ -167,7 +167,7 @@ def test_stage_4_exposes_prompt_version() -> None:
 
 def test_stage_4_does_not_import_claude_runner_directly() -> None:
     """Pipeline guardrail: only ``runner.py`` may import claude_runner."""
-    import meta_harness.agents.pipeline.stage_4 as stage_4_mod  # type: ignore
+    import claude_reflect.agents.pipeline.stage_4 as stage_4_mod  # type: ignore
 
     src = Path(stage_4_mod.__file__).read_text(encoding="utf-8")
     assert "claude_runner" not in src, (
@@ -182,7 +182,7 @@ def test_stage_4_does_not_import_claude_runner_directly() -> None:
 
 
 def test_identify_corpus_gaps_returns_list(tmp_path: Path) -> None:
-    from meta_harness.agents.pipeline.stage_4 import identify_corpus_gaps  # type: ignore
+    from claude_reflect.agents.pipeline.stage_4 import identify_corpus_gaps  # type: ignore
 
     inputs = _make_corpus_inputs(["s1", "s2"])
     runner = MagicMock()
@@ -204,7 +204,7 @@ def test_identify_corpus_gaps_returns_list(tmp_path: Path) -> None:
 def test_identify_corpus_gaps_output_schema_matches_spec(
     tmp_path: Path,
 ) -> None:
-    from meta_harness.agents.pipeline.stage_4 import identify_corpus_gaps  # type: ignore
+    from claude_reflect.agents.pipeline.stage_4 import identify_corpus_gaps  # type: ignore
 
     inputs = _make_corpus_inputs(["s1"])
     runner = MagicMock()
@@ -234,7 +234,7 @@ def test_identify_corpus_gaps_output_schema_matches_spec(
 
 
 def test_identify_corpus_gaps_no_scalar_grades(tmp_path: Path) -> None:
-    from meta_harness.agents.pipeline.stage_4 import identify_corpus_gaps  # type: ignore
+    from claude_reflect.agents.pipeline.stage_4 import identify_corpus_gaps  # type: ignore
 
     inputs = _make_corpus_inputs(["s1"])
     runner = MagicMock()
@@ -261,7 +261,7 @@ def test_identify_corpus_gaps_no_scalar_grades(tmp_path: Path) -> None:
 def test_unmatched_gap_observation_creates_new_gap_record(
     tmp_path: Path,
 ) -> None:
-    from meta_harness.agents.pipeline.stage_4 import identify_corpus_gaps  # type: ignore
+    from claude_reflect.agents.pipeline.stage_4 import identify_corpus_gaps  # type: ignore
 
     runner = MagicMock()
     runner.invoke.return_value = _canned_corpus_response([
@@ -283,7 +283,7 @@ def test_unmatched_gap_observation_creates_new_gap_record(
         "link the observation to the canonical record."
     )
 
-    gaps_dir = tmp_path / ".meta-harness" / "gaps"
+    gaps_dir = tmp_path / ".claude-reflect" / "gaps"
     assert gaps_dir.is_dir()
     gap_files = list(gaps_dir.glob("*.json"))
     assert len(gap_files) == 1, (
@@ -297,8 +297,8 @@ def test_matched_gap_observation_appends_to_existing_record(
 ) -> None:
     """The matched-gap-id merge rule: existing gap records gain new
     evidence; pre-existing evidence is preserved (append-only)."""
-    from meta_harness.agents.pipeline.stage_4 import identify_corpus_gaps  # type: ignore
-    from meta_harness.storage.gap_record import (
+    from claude_reflect.agents.pipeline.stage_4 import identify_corpus_gaps  # type: ignore
+    from claude_reflect.storage.gap_record import (
         create_gap_record,
         read_gap_record,
     )
@@ -368,8 +368,8 @@ def test_stage_4_does_not_delete_existing_gap_records(
 ) -> None:
     """Append-only invariant: stage 4 must never delete gap-record files,
     even when its observations do not cover an existing gap."""
-    from meta_harness.agents.pipeline.stage_4 import identify_corpus_gaps  # type: ignore
-    from meta_harness.storage.gap_record import create_gap_record
+    from claude_reflect.agents.pipeline.stage_4 import identify_corpus_gaps  # type: ignore
+    from claude_reflect.storage.gap_record import create_gap_record
 
     # Seed an existing record that stage 4 will NOT observe.
     untouched = create_gap_record(tmp_path, {
@@ -390,7 +390,7 @@ def test_stage_4_does_not_delete_existing_gap_records(
     })
     untouched_id = untouched["identifier"]
     untouched_path = (
-        tmp_path / ".meta-harness" / "gaps" / f"{untouched_id}.json"
+        tmp_path / ".claude-reflect" / "gaps" / f"{untouched_id}.json"
     )
     assert untouched_path.is_file()
     original_bytes = untouched_path.read_bytes()
@@ -426,7 +426,7 @@ def test_stage_4_does_not_delete_existing_gap_records(
 def test_identify_corpus_gaps_writes_cache_under_stage_4_namespace(
     tmp_path: Path,
 ) -> None:
-    from meta_harness.agents.pipeline.stage_4 import identify_corpus_gaps  # type: ignore
+    from claude_reflect.agents.pipeline.stage_4 import identify_corpus_gaps  # type: ignore
 
     runner = MagicMock()
     runner.invoke.return_value = _canned_corpus_response([
@@ -440,7 +440,7 @@ def test_identify_corpus_gaps_writes_cache_under_stage_4_namespace(
         runner=runner, repo=tmp_path, model="m",
     )
 
-    cache_dir = tmp_path / ".meta-harness" / "eval-cache" / "stage-4"
+    cache_dir = tmp_path / ".claude-reflect" / "eval-cache" / "stage-4"
     assert cache_dir.is_dir(), (
         f"Expected stage 4 cache dir at {cache_dir}"
     )
@@ -451,7 +451,7 @@ def test_identify_corpus_gaps_writes_cache_under_stage_4_namespace(
 def test_identify_corpus_gaps_cache_hit_skips_runner(
     tmp_path: Path,
 ) -> None:
-    from meta_harness.agents.pipeline.stage_4 import identify_corpus_gaps  # type: ignore
+    from claude_reflect.agents.pipeline.stage_4 import identify_corpus_gaps  # type: ignore
 
     runner = MagicMock()
     runner.invoke.return_value = _canned_corpus_response([
@@ -482,7 +482,7 @@ def test_identify_corpus_gaps_cache_hit_skips_runner(
 def test_identify_corpus_gaps_cache_invalidates_when_upstream_changes(
     tmp_path: Path,
 ) -> None:
-    from meta_harness.agents.pipeline.stage_4 import identify_corpus_gaps  # type: ignore
+    from claude_reflect.agents.pipeline.stage_4 import identify_corpus_gaps  # type: ignore
 
     runner = MagicMock()
     runner.invoke.return_value = _canned_corpus_response([

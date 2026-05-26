@@ -27,7 +27,7 @@ from types import ModuleType
 
 import pytest
 
-from meta_harness.storage.summary_layer import (
+from claude_reflect.storage.summary_layer import (
     PageKind,
     regenerate_index,
     write_page,
@@ -42,8 +42,8 @@ from meta_harness.storage.summary_layer import (
 # ---------------------------------------------------------------------------
 
 def _setup_summary_dir(tmp_path: Path) -> Path:
-    """Create the summary layer directory structure under a tmp .meta-harness."""
-    summary_dir = tmp_path / ".meta-harness" / "summary"
+    """Create the summary layer directory structure under a tmp .claude-reflect."""
+    summary_dir = tmp_path / ".claude-reflect" / "summary"
     summary_dir.mkdir(parents=True, exist_ok=True)
     return summary_dir
 
@@ -161,7 +161,7 @@ class TestProposerCannotReachSummaryLayer:
         or transitively.
         """
         src_root = Path(__file__).resolve().parents[2] / "src"
-        proposer_file = src_root / "meta_harness" / "agents" / "proposer.py"
+        proposer_file = src_root / "claude_reflect" / "agents" / "proposer.py"
 
         # If proposer doesn't exist yet, the test should still fail
         # with an informative message (it's a gate test).
@@ -192,7 +192,7 @@ class TestProposerCannotReachSummaryLayer:
         module (bidirectional check).
         """
         src_root = Path(__file__).resolve().parents[2] / "src"
-        summary_file = src_root / "meta_harness" / "storage" / "summary_layer.py"
+        summary_file = src_root / "claude_reflect" / "storage" / "summary_layer.py"
 
         if not summary_file.exists():
             pytest.fail(

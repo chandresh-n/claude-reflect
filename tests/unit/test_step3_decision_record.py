@@ -19,7 +19,7 @@ import json
 
 import pytest
 
-from meta_harness.storage.decision_record import (
+from claude_reflect.storage.decision_record import (
     create_decision_record,
     format_commit_message,
     parse_commit_header,

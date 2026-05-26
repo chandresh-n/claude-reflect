@@ -1,7 +1,7 @@
-# Meta-harness for Claude Code. Technical Spec
+# Claude-reflect for Claude Code. Technical Spec
 
 This directory specifies the components, contracts, and run-time behavior of a
-meta-harness for Claude Code. Read in conjunction with the vision PRD (separate
+claude-reflect for Claude Code. Read in conjunction with the vision PRD (separate
 document). The PRD answers *why*. This spec answers *what* and *how*, at the
 level of interfaces, not implementation.
 

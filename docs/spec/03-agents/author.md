@@ -29,7 +29,7 @@ invocations happen in Phase 5b.
 - Access to documentation on Claude Code artifacts: how to write skills,
   hooks, agents, settings, MCP configs. The author's prompt includes
   (or points to) canonical docs. Keeping this reference material
-  current is a responsibility of the meta-harness installation (see
+  current is a responsibility of the claude-reflect installation (see
   `06-cross-cutting/deferred.md` for refresh strategy).
 
 ## Outputs

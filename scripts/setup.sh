@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# setup.sh — Install meta-harness and verify the installation.
+# setup.sh — Install claude-reflect and verify the installation.
 #
 # Usage:
 #   ./scripts/setup.sh          # install in dev mode (editable)
@@ -77,10 +77,10 @@ cd "$PROJECT_ROOT"
 MODE="${1:-}"
 
 if [[ "$MODE" == "--prod" ]]; then
-    info "Installing meta-harness (production mode)..."
+    info "Installing claude-reflect (production mode)..."
     $PYTHON -m pip install . -q 2>&1 | grep -v '^\[notice\]' || true
 else
-    info "Installing meta-harness (editable/dev mode with test dependencies)..."
+    info "Installing claude-reflect (editable/dev mode with test dependencies)..."
     $PYTHON -m pip install -e ".[dev]" -q 2>&1 | grep -v '^\[notice\]' || true
 fi
 
@@ -92,7 +92,7 @@ ok "Package installed."
 
 info "Verifying CLI is available..."
 
-if $PYTHON -m meta_harness.cli --help &>/dev/null; then
+if $PYTHON -m claude_reflect.cli --help &>/dev/null; then
     ok "CLI module loads correctly."
 else
     err "CLI module failed to load. Check the installation."
@@ -100,11 +100,11 @@ else
 fi
 
 # Check the entry point is on PATH
-if command -v meta-harness &>/dev/null; then
-    ok "meta-harness command is on PATH."
+if command -v claude-reflect &>/dev/null; then
+    ok "claude-reflect command is on PATH."
 else
-    info "meta-harness command is not on PATH (pip scripts dir may not be in \$PATH)."
-    info "You can still run it via: $PYTHON -m meta_harness.cli <subcommand>"
+    info "claude-reflect command is not on PATH (pip scripts dir may not be in \$PATH)."
+    info "You can still run it via: $PYTHON -m claude_reflect.cli <subcommand>"
 fi
 
 # --------------------------------------------------------------------------
@@ -133,9 +133,9 @@ echo ""
 ok "Setup complete."
 echo ""
 info "Quick start:"
-echo "  meta-harness status                        # check if a repo is initialized"
-echo "  meta-harness review --range 'last 7 days'  # run a reflective pass"
-echo "  meta-harness maintenance                   # trigger maintenance"
+echo "  claude-reflect status                        # check if a repo is initialized"
+echo "  claude-reflect review --range 'last 7 days'  # run a reflective pass"
+echo "  claude-reflect maintenance                   # trigger maintenance"
 echo ""
 info "To set up as a Claude Code skill, run:"
 echo "  ./scripts/install-skill.sh /path/to/your/repo"

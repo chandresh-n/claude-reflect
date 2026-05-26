@@ -2,7 +2,7 @@
 
 ## Role
 
-The run loop orchestrates a single invocation of the meta-harness. It
+The run loop orchestrates a single invocation of the claude-reflect. It
 sequences the phases that read sessions, run the evaluator, generate
 proposals, realize them as diffs, present them to the human, capture
 decisions, and commit outcomes. The skill is the orchestrator. Each
@@ -14,7 +14,7 @@ begin before its predecessor's end state has been reached.
 
 ## Inputs
 
-Triggered by human invocation of the meta-harness skill. The human
+Triggered by human invocation of the claude-reflect skill. The human
 provides a date range.
 
 ## Outputs
@@ -35,8 +35,8 @@ Per run:
 
 ### Phase 0: Skill invocation
 
-The human invokes the meta-harness skill (e.g.,
-`/meta-harness review`). The skill prompts for or receives a date
+The human invokes the claude-reflect skill (e.g.,
+`/claude-reflect review`). The skill prompts for or receives a date
 range. Date ranges may be absolute (`2026-04-01` to `2026-04-07`) or
 relative (`last 7 days`, `since last run`).
 

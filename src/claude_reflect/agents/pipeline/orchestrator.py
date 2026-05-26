@@ -22,7 +22,7 @@ records ``partial_completion=True`` on the affected session's stage 3
 narrative without dropping the session.
 
 Progress for each invocation lands under
-``<repo>/.meta-harness/logs/eval/<UTC-timestamp>/stages/<stage_id>/``
+``<repo>/.claude-reflect/logs/eval/<UTC-timestamp>/stages/<stage_id>/``
 as a small JSON artefact per stage. The directory is created
 deterministically per run; callers can override ``log_dir``.
 
@@ -36,13 +36,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
-from meta_harness.agents.pipeline.runner import ClaudeCLIRunner, Runner
-from meta_harness.agents.pipeline.stage_1a import describe_session_turns
-from meta_harness.agents.pipeline.stage_1b import observe_session_windows
-from meta_harness.agents.pipeline.stage_2 import refine_session_passes
-from meta_harness.agents.pipeline.stage_3 import summarize_session
-from meta_harness.agents.pipeline.stage_4 import identify_corpus_gaps
-from meta_harness.storage.session_logs import Session
+from claude_reflect.agents.pipeline.runner import ClaudeCLIRunner, Runner
+from claude_reflect.agents.pipeline.stage_1a import describe_session_turns
+from claude_reflect.agents.pipeline.stage_1b import observe_session_windows
+from claude_reflect.agents.pipeline.stage_2 import refine_session_passes
+from claude_reflect.agents.pipeline.stage_3 import summarize_session
+from claude_reflect.agents.pipeline.stage_4 import identify_corpus_gaps
+from claude_reflect.storage.session_logs import Session
 
 
 def _safe_id(identifier: str) -> str:
@@ -80,7 +80,7 @@ def evaluate(
 
     if log_dir is None:
         run_ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
-        log_dir = repo / ".meta-harness" / "logs" / "eval" / run_ts
+        log_dir = repo / ".claude-reflect" / "logs" / "eval" / run_ts
     stages_dir = log_dir / "stages"
     stages_dir.mkdir(parents=True, exist_ok=True)
 

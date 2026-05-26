@@ -6,7 +6,7 @@ A decision record is the committed record of a proposal plus the human's
 response. Every proposal becomes exactly one decision record, regardless of
 whether it was accepted, rejected, or failed at authoring. Decision records
 are tracked in git on a dedicated branch and are the canonical temporal
-history of the meta-harness's choices.
+history of the claude-reflect's choices.
 
 ## Inputs
 

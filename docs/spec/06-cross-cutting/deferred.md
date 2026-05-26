@@ -85,7 +85,7 @@ field on existing records.
 
 ## Generalization to non-Claude-Code harnesses
 
-**What it would do:** Allow the meta-harness to target Gemini CLI,
+**What it would do:** Allow the claude-reflect to target Gemini CLI,
 OpenCode, or other coding harnesses with different configuration
 surfaces.
 
@@ -99,7 +99,7 @@ author variants and a harness selector in the skill invocation.
 **Reserved in schema:** No schema slot in the current spec. When
 generalization is added, it likely appears as a new field on the
 proposal or the batch indicating the target harness, or as a
-configuration parameter of the meta-harness installation.
+configuration parameter of the claude-reflect installation.
 
 ---
 
@@ -123,7 +123,7 @@ or as its own lightweight process).
 
 ## Background or scheduled invocation
 
-**What it would do:** Allow the meta-harness to run on a schedule
+**What it would do:** Allow the claude-reflect to run on a schedule
 (nightly, weekly) or trigger on events (a session completing, a
 certain time elapsing). Reduce the explicit-invocation burden on the
 human.
@@ -161,14 +161,14 @@ modification to the diff.
 ## Multi-user coordination on the same repository
 
 **What it would do:** Allow multiple humans sharing a repository to
-each run the meta-harness and coordinate (or compete) over the
+each run the claude-reflect and coordinate (or compete) over the
 configuration.
 
 **Why deferred:** The premise is single-human optimization. Two
-humans using the same repository would run their own meta-harness
+humans using the same repository would run their own claude-reflect
 instances with their own knowledge bases. Coordinating their changes
 to a shared configuration is a git-merge problem the human solves
-manually, outside the meta-harness's scope.
+manually, outside the claude-reflect's scope.
 
 **Reserved in schema:** No schema slot. Git's normal merge tooling
 is the coordination mechanism.

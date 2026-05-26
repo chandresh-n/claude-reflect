@@ -1,5 +1,5 @@
 """
-Author agent — Step 10 of the meta-harness build.
+Author agent — Step 10 of the claude-reflect build.
 
 Takes a single proposer intent and produces a concrete git diff on a
 proposal branch, or returns author_failed honestly. One author is
@@ -23,7 +23,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from meta_harness.agents.claude_runner import ClaudeRunnerError, invoke_claude
+from claude_reflect.agents.claude_runner import ClaudeRunnerError, invoke_claude
 
 
 # ---------------------------------------------------------------------------
@@ -31,7 +31,7 @@ from meta_harness.agents.claude_runner import ClaudeRunnerError, invoke_claude
 # ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT = """\
-You are the author agent for the meta-harness. Your role is to take a single \
+You are the author agent for the claude-reflect. Your role is to take a single \
 proposer intent and produce the concrete file content that realizes it. You \
 are a craftsman, not a decision-maker. You do not reason about whether the \
 change is a good idea; the proposer already decided that.
@@ -97,7 +97,7 @@ Claude Code's artifact system), fail honestly.
 
 def _create_proposal_branch(repo: Path, proposal_id: str) -> str:
     """Create a proposal branch and return the branch name."""
-    branch_name = f"meta-harness/proposal/{proposal_id}"
+    branch_name = f"claude-reflect/proposal/{proposal_id}"
     subprocess.run(
         ["git", "checkout", "-b", branch_name],
         cwd=str(repo),
@@ -317,7 +317,7 @@ def _parse_author_output(raw_text: str) -> dict:
     Tolerant of preamble prose and ```json``` fences — the model sometimes
     emits both even when the system prompt forbids markdown wrapping.
     """
-    from meta_harness.agents._json_parsing import extract_json
+    from claude_reflect.agents._json_parsing import extract_json
 
     try:
         output = extract_json(raw_text)
@@ -478,7 +478,7 @@ def author(
             "proposal_id": proposal_id,
             "diff_reference": "no-commit",
             "files_touched": files_touched,
-            "branch_name": f"meta-harness/proposal/{proposal_id}",
+            "branch_name": f"claude-reflect/proposal/{proposal_id}",
         }
 
     # Git operations: create branch, apply files, commit

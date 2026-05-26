@@ -3,5 +3,5 @@
   "proposal_id": "prop-author-valid-001",
   "diff_reference": "abc123def456",
   "files_touched": ["CLAUDE.md"],
-  "branch_name": "meta-harness/proposal/prop-author-valid-001"
+  "branch_name": "claude-reflect/proposal/prop-author-valid-001"
 }

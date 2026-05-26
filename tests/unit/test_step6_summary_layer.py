@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from meta_harness.storage.summary_layer import (
+from claude_reflect.storage.summary_layer import (
     PageKind,
     regenerate_index,
     write_page,
@@ -34,8 +34,8 @@ from meta_harness.storage.summary_layer import (
 # ---------------------------------------------------------------------------
 
 def _setup_summary_dir(tmp_path: Path) -> Path:
-    """Create the summary layer directory structure under a tmp .meta-harness."""
-    summary_dir = tmp_path / ".meta-harness" / "summary"
+    """Create the summary layer directory structure under a tmp .claude-reflect."""
+    summary_dir = tmp_path / ".claude-reflect" / "summary"
     summary_dir.mkdir(parents=True, exist_ok=True)
     return summary_dir
 
@@ -368,7 +368,7 @@ class TestPageFilesystemLayout:
 
     def test_summary_dir_path(self, tmp_path):
         """get_summary_dir returns the expected path."""
-        kb_root = tmp_path / ".meta-harness"
+        kb_root = tmp_path / ".claude-reflect"
         kb_root.mkdir(parents=True, exist_ok=True)
         result = get_summary_dir(kb_root=kb_root)
         assert result == kb_root / "summary"

@@ -15,7 +15,7 @@ Pins (HARD — from docs/PLAN.md Step 14):
     (session_id, outcome enum, pass_counts_by_type, gaps_observed,
     narrative)
   - partial_completion flag propagates when upstream is partial
-  - cache lives under .meta-harness/eval-cache/stage-3/ and cascades
+  - cache lives under .claude-reflect/eval-cache/stage-3/ and cascades
     on upstream input change
   - one stage 1b window failing for a session yields a
     partial_completion flag on stage 3's narrative for that session,
@@ -113,13 +113,13 @@ def _scan_for_forbidden_scalar_keys(obj: Any) -> list[str]:
 
 
 def test_stage_3_module_importable() -> None:
-    from meta_harness.agents.pipeline.stage_3 import (  # type: ignore  # noqa: F401
+    from claude_reflect.agents.pipeline.stage_3 import (  # type: ignore  # noqa: F401
         summarize_session,
     )
 
 
 def test_stage_3_exposes_prompt_version() -> None:
-    from meta_harness.agents.pipeline import stage_3  # type: ignore
+    from claude_reflect.agents.pipeline import stage_3  # type: ignore
 
     assert hasattr(stage_3, "STAGE_3_PROMPT_VERSION")
     assert isinstance(stage_3.STAGE_3_PROMPT_VERSION, str)
@@ -134,7 +134,7 @@ def test_stage_3_exposes_prompt_version() -> None:
 def test_summarize_session_returns_one_narrative_per_session(
     tmp_path: Path,
 ) -> None:
-    from meta_harness.agents.pipeline.stage_3 import summarize_session  # type: ignore
+    from claude_reflect.agents.pipeline.stage_3 import summarize_session  # type: ignore
 
     obs = [_per_turn_observation("s1", i) for i in range(3)]
     passes = [_pass_classification("s1", 0, 2)]
@@ -156,7 +156,7 @@ def test_summarize_session_returns_one_narrative_per_session(
 
 
 def test_summarize_session_output_schema_matches_spec(tmp_path: Path) -> None:
-    from meta_harness.agents.pipeline.stage_3 import summarize_session  # type: ignore
+    from claude_reflect.agents.pipeline.stage_3 import summarize_session  # type: ignore
 
     obs = [_per_turn_observation("s1", i) for i in range(3)]
     passes = [_pass_classification("s1", 0, 2)]
@@ -198,7 +198,7 @@ def test_summarize_session_output_schema_matches_spec(tmp_path: Path) -> None:
 
 
 def test_summarize_session_no_scalar_grades(tmp_path: Path) -> None:
-    from meta_harness.agents.pipeline.stage_3 import summarize_session  # type: ignore
+    from claude_reflect.agents.pipeline.stage_3 import summarize_session  # type: ignore
 
     obs = [_per_turn_observation("s1", 0)]
     passes = [_pass_classification("s1", 0, 0)]
@@ -228,7 +228,7 @@ def test_summarize_session_marks_partial_when_input_partial_true(
     """Direct test of the flag-propagation contract: if the caller
     (the orchestrator) passes partial_completion=True, the narrative
     MUST carry partial_completion=True in its output."""
-    from meta_harness.agents.pipeline.stage_3 import summarize_session  # type: ignore
+    from claude_reflect.agents.pipeline.stage_3 import summarize_session  # type: ignore
 
     obs = [_per_turn_observation("s1", i) for i in range(3)]
     passes = [_pass_classification("s1", 0, 2)]
@@ -253,7 +253,7 @@ def test_summarize_session_marks_partial_when_input_partial_true(
 def test_summarize_session_does_not_mark_partial_when_input_partial_false(
     tmp_path: Path,
 ) -> None:
-    from meta_harness.agents.pipeline.stage_3 import summarize_session  # type: ignore
+    from claude_reflect.agents.pipeline.stage_3 import summarize_session  # type: ignore
 
     obs = [_per_turn_observation("s1", i) for i in range(3)]
     passes = [_pass_classification("s1", 0, 2)]
@@ -289,8 +289,8 @@ def test_stage_1b_window_failure_propagates_partial_completion_to_stage_3(
     session yields a partial_completion flag on stage 3's narrative for
     that session, not a session drop. We wire stage 1b → stage 3
     directly (no orchestrator yet) and verify the flag survives."""
-    from meta_harness.agents.pipeline.stage_1b import observe_session_windows  # type: ignore
-    from meta_harness.agents.pipeline.stage_3 import summarize_session  # type: ignore
+    from claude_reflect.agents.pipeline.stage_1b import observe_session_windows  # type: ignore
+    from claude_reflect.agents.pipeline.stage_3 import summarize_session  # type: ignore
 
     descs = [
         {
@@ -365,7 +365,7 @@ def test_stage_1b_window_failure_propagates_partial_completion_to_stage_3(
 def test_summarize_session_writes_cache_under_stage_3_namespace(
     tmp_path: Path,
 ) -> None:
-    from meta_harness.agents.pipeline.stage_3 import summarize_session  # type: ignore
+    from claude_reflect.agents.pipeline.stage_3 import summarize_session  # type: ignore
 
     obs = [_per_turn_observation("s1", i) for i in range(2)]
     passes = [_pass_classification("s1", 0, 1)]
@@ -380,7 +380,7 @@ def test_summarize_session_writes_cache_under_stage_3_namespace(
         runner=runner, repo=tmp_path, model="m",
     )
 
-    cache_dir = tmp_path / ".meta-harness" / "eval-cache" / "stage-3"
+    cache_dir = tmp_path / ".claude-reflect" / "eval-cache" / "stage-3"
     assert cache_dir.is_dir(), (
         f"Expected stage 3 cache dir at {cache_dir}"
     )
@@ -389,7 +389,7 @@ def test_summarize_session_writes_cache_under_stage_3_namespace(
 
 
 def test_summarize_session_cache_hit_skips_runner(tmp_path: Path) -> None:
-    from meta_harness.agents.pipeline.stage_3 import summarize_session  # type: ignore
+    from claude_reflect.agents.pipeline.stage_3 import summarize_session  # type: ignore
 
     obs = [_per_turn_observation("s1", i) for i in range(2)]
     passes = [_pass_classification("s1", 0, 1)]
@@ -423,7 +423,7 @@ def test_summarize_session_cache_invalidates_when_upstream_changes(
 ) -> None:
     """Cascade invalidation: changing the per_turn_observations or the
     pass_classifications must change the stage 3 cache key."""
-    from meta_harness.agents.pipeline.stage_3 import summarize_session  # type: ignore
+    from claude_reflect.agents.pipeline.stage_3 import summarize_session  # type: ignore
 
     obs = [_per_turn_observation("s1", i) for i in range(2)]
     passes = [_pass_classification("s1", 0, 1)]

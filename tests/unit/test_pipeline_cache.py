@@ -8,7 +8,7 @@ the affected stage's cache.  Pins:
   - ``cache_key(stage_id, model, prompt_version, content)`` is stable
     and varies on each of those four components.
   - ``StageCache`` exposes ``get``/``set`` that persist under
-    ``.meta-harness/eval-cache/stage-<id>/<key>.json``.
+    ``.claude-reflect/eval-cache/stage-<id>/<key>.json``.
   - A bumped ``prompt_version`` is functionally an invalidation —
     new key, no hit on prior entries.
 
@@ -26,7 +26,7 @@ from pathlib import Path
 
 
 def test_cache_key_is_stable_for_identical_inputs() -> None:
-    from meta_harness.agents.pipeline.cache import cache_key  # type: ignore
+    from claude_reflect.agents.pipeline.cache import cache_key  # type: ignore
 
     a = cache_key(stage_id="1a", model="claude-opus-4-6",
                   prompt_version="v1", content={"x": 1})
@@ -37,7 +37,7 @@ def test_cache_key_is_stable_for_identical_inputs() -> None:
 
 
 def test_cache_key_changes_when_model_changes() -> None:
-    from meta_harness.agents.pipeline.cache import cache_key  # type: ignore
+    from claude_reflect.agents.pipeline.cache import cache_key  # type: ignore
 
     a = cache_key(stage_id="1a", model="claude-opus-4-6",
                   prompt_version="v1", content={"x": 1})
@@ -49,7 +49,7 @@ def test_cache_key_changes_when_model_changes() -> None:
 def test_cache_key_changes_when_prompt_version_changes() -> None:
     """Bumping prompt_version is the canonical way to invalidate a
     stage's cache after evolving its prompt.  This MUST change the key."""
-    from meta_harness.agents.pipeline.cache import cache_key  # type: ignore
+    from claude_reflect.agents.pipeline.cache import cache_key  # type: ignore
 
     a = cache_key(stage_id="1a", model="claude-opus-4-6",
                   prompt_version="v1", content={"x": 1})
@@ -59,7 +59,7 @@ def test_cache_key_changes_when_prompt_version_changes() -> None:
 
 
 def test_cache_key_changes_when_content_changes() -> None:
-    from meta_harness.agents.pipeline.cache import cache_key  # type: ignore
+    from claude_reflect.agents.pipeline.cache import cache_key  # type: ignore
 
     a = cache_key(stage_id="1a", model="claude-opus-4-6",
                   prompt_version="v1", content={"x": 1})
@@ -70,7 +70,7 @@ def test_cache_key_changes_when_content_changes() -> None:
 
 def test_cache_key_changes_when_stage_id_changes() -> None:
     """Each stage has its own cache namespace; stage_id is part of the key."""
-    from meta_harness.agents.pipeline.cache import cache_key  # type: ignore
+    from claude_reflect.agents.pipeline.cache import cache_key  # type: ignore
 
     a = cache_key(stage_id="1a", model="m", prompt_version="v1", content={"x": 1})
     b = cache_key(stage_id="1b", model="m", prompt_version="v1", content={"x": 1})
@@ -83,14 +83,14 @@ def test_cache_key_changes_when_stage_id_changes() -> None:
 
 
 def test_stage_cache_miss_returns_none(tmp_path: Path) -> None:
-    from meta_harness.agents.pipeline.cache import StageCache  # type: ignore
+    from claude_reflect.agents.pipeline.cache import StageCache  # type: ignore
 
     cache = StageCache(repo=tmp_path, stage_id="1a")
     assert cache.get("nonexistent-key") is None
 
 
 def test_stage_cache_set_then_get_roundtrips_json(tmp_path: Path) -> None:
-    from meta_harness.agents.pipeline.cache import StageCache  # type: ignore
+    from claude_reflect.agents.pipeline.cache import StageCache  # type: ignore
 
     cache = StageCache(repo=tmp_path, stage_id="1a")
     value = {"session_id": "s1", "turn_index": 0, "goal_signal": "hi"}
@@ -100,15 +100,15 @@ def test_stage_cache_set_then_get_roundtrips_json(tmp_path: Path) -> None:
 
 def test_stage_cache_writes_to_expected_filesystem_location(tmp_path: Path) -> None:
     """The cache file MUST land at:
-        <repo>/.meta-harness/eval-cache/stage-<id>/<key>.json
+        <repo>/.claude-reflect/eval-cache/stage-<id>/<key>.json
     Other components and downstream tooling depend on this layout."""
-    from meta_harness.agents.pipeline.cache import StageCache  # type: ignore
+    from claude_reflect.agents.pipeline.cache import StageCache  # type: ignore
 
     cache = StageCache(repo=tmp_path, stage_id="2")
     cache.set("abcdef", {"hello": "world"})
 
     expected = (
-        tmp_path / ".meta-harness" / "eval-cache" / "stage-2" / "abcdef.json"
+        tmp_path / ".claude-reflect" / "eval-cache" / "stage-2" / "abcdef.json"
     )
     assert expected.is_file(), f"Expected cache file at {expected}"
     assert json.loads(expected.read_text(encoding="utf-8")) == {"hello": "world"}
@@ -117,7 +117,7 @@ def test_stage_cache_writes_to_expected_filesystem_location(tmp_path: Path) -> N
 def test_stage_cache_namespaces_isolated_between_stages(tmp_path: Path) -> None:
     """Stage 1a and stage 2 with the same key string must not collide —
     they live in separate directories."""
-    from meta_harness.agents.pipeline.cache import StageCache  # type: ignore
+    from claude_reflect.agents.pipeline.cache import StageCache  # type: ignore
 
     c1a = StageCache(repo=tmp_path, stage_id="1a")
     c2 = StageCache(repo=tmp_path, stage_id="2")
@@ -133,7 +133,7 @@ def test_bumping_prompt_version_invalidates_old_cache(tmp_path: Path) -> None:
     The point of including prompt_version in cache_key is exactly that we
     never have to manually rm -rf the cache when a prompt changes — the
     key shifts and the old entry simply becomes an orphan."""
-    from meta_harness.agents.pipeline.cache import (  # type: ignore
+    from claude_reflect.agents.pipeline.cache import (  # type: ignore
         StageCache, cache_key,
     )
 

@@ -1,9 +1,9 @@
 """
-Run loop orchestration — Step 11 of the meta-harness build.
+Run loop orchestration — Step 11 of the claude-reflect build.
 
 Spec ref: docs/spec/04-processes/run-loop.md
 
-Orchestrates a single invocation of the meta-harness through phases 0–9.
+Orchestrates a single invocation of the claude-reflect through phases 0–9.
 Each phase involving an agent spawns a fresh agent instance (via injected
 callables). Phases execute sequentially — a phase cannot begin before its
 predecessor's end state has been reached.
@@ -20,8 +20,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-from meta_harness.storage.knowledge_base import setup as kb_setup
-from meta_harness.processes.maintenance import should_trigger, run_maintenance
+from claude_reflect.storage.knowledge_base import setup as kb_setup
+from claude_reflect.processes.maintenance import should_trigger, run_maintenance
 
 
 class RunLoopError(Exception):
@@ -37,7 +37,7 @@ class RunLoopError(Exception):
 class RunState:
     """Tracks the state of a single run loop invocation.
 
-    Persisted to .meta-harness/runs/<run_id>.json so that Phase-7 paused
+    Persisted to .claude-reflect/runs/<run_id>.json so that Phase-7 paused
     runs can be resumed and crashed runs can be identified for discard.
     """
 
@@ -55,7 +55,7 @@ class RunState:
 
     def save(self, repo: Path) -> None:
         """Persist this run state to disk."""
-        runs_dir = repo / ".meta-harness" / "runs"
+        runs_dir = repo / ".claude-reflect" / "runs"
         runs_dir.mkdir(parents=True, exist_ok=True)
         path = runs_dir / f"{self.run_id}.json"
         path.write_text(
@@ -66,7 +66,7 @@ class RunState:
     @classmethod
     def load(cls, repo: Path, run_id: str) -> RunState:
         """Load a run state from disk."""
-        path = repo / ".meta-harness" / "runs" / f"{run_id}.json"
+        path = repo / ".claude-reflect" / "runs" / f"{run_id}.json"
         if not path.exists():
             raise RunLoopError(f"No run state found for {run_id}")
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -98,7 +98,7 @@ class RunState:
 
 
 class RunLoop:
-    """Orchestrates a single invocation of the meta-harness.
+    """Orchestrates a single invocation of the claude-reflect.
 
     All agent work is performed by injected callables so that tests can
     mock agents with canned responses. The implementation wires real agents
@@ -335,13 +335,13 @@ class RunLoop:
 
     def _phase_1_setup(self) -> None:
         """Phase 1: Environment setup. No-op if already initialized."""
-        kb_dir = self.repo / ".meta-harness"
+        kb_dir = self.repo / ".claude-reflect"
         if not kb_dir.is_dir():
             kb_setup(self.repo)
 
     def _phase_2_maintenance(self) -> None:
         """Phase 2: Maintenance check. Runs maintenance if thresholds crossed."""
-        kb_dir = self.repo / ".meta-harness"
+        kb_dir = self.repo / ".claude-reflect"
         if not kb_dir.is_dir():
             return
 
@@ -364,7 +364,7 @@ class RunLoop:
 
     def _find_pending_proposals(self) -> List[str]:
         """Find pending proposals from prior runs (Phase 2.5)."""
-        runs_dir = self.repo / ".meta-harness" / "runs"
+        runs_dir = self.repo / ".claude-reflect" / "runs"
         if not runs_dir.is_dir():
             return []
 
@@ -382,7 +382,7 @@ class RunLoop:
         self, batch: dict, pending_ids: List[str]
     ) -> None:
         """Add pending proposals from prior runs into the current batch."""
-        runs_dir = self.repo / ".meta-harness" / "runs"
+        runs_dir = self.repo / ".claude-reflect" / "runs"
         existing_ids = {
             p["proposal_id"] for p in batch.get("proposals", [])
         }
@@ -427,7 +427,7 @@ class RunLoop:
         Crashed or running runs that stopped before Phase 7 are marked as
         discarded (not deleted — append-only principle).
         """
-        runs_dir = self.repo / ".meta-harness" / "runs"
+        runs_dir = self.repo / ".claude-reflect" / "runs"
         if not runs_dir.is_dir():
             return
 

@@ -5,7 +5,7 @@ cutover.
 The step-15 cutover removes the pre-pipeline batching code paths
 from the single-call evaluator and forbids the old conversational
 ``Human:`` / ``Assistant:`` prompt shape from appearing anywhere
-under ``src/meta_harness/agents/pipeline/``. It also pins the gap-
+under ``src/claude_reflect/agents/pipeline/``. It also pins the gap-
 record append-only invariant: stage 4 must never call a deletion
 verb on gap-record files.
 
@@ -16,18 +16,18 @@ Pins (HARD — from docs/PLAN.md Step 15):
     ``_build_batch_prompt`` are absent from every file under
     ``src/``
   - the regex ``Human:`` followed by newline and ``Assistant:`` is
-    absent from every file under ``src/meta_harness/agents/pipeline/``
+    absent from every file under ``src/claude_reflect/agents/pipeline/``
   - no pipeline module (other than ``runner.py``) imports
     ``claude_runner``
   - pipeline modules do not call destructive gap-record operations
     (``unlink``, ``rmtree``, ``os.remove``) against
-    ``.meta-harness/gaps/``
+    ``.claude-reflect/gaps/``
   - the matched-gap-id merge rule is exercised end-to-end via stage 4
     (covered in detail in ``test_pipeline_stage_4.py``; this file
     asserts the static-scan portion)
 
 Expected to FAIL on the symbol-removal scan because the old
-batching code still lives in ``src/meta_harness/agents/evaluator.py``
+batching code still lives in ``src/claude_reflect/agents/evaluator.py``
 until step 15's implementation lands.
 """
 from __future__ import annotations
@@ -39,7 +39,7 @@ from pathlib import Path
 # Resolve the src/ tree from the test file's own location.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SRC_DIR = _REPO_ROOT / "src"
-_PIPELINE_DIR = _SRC_DIR / "meta_harness" / "agents" / "pipeline"
+_PIPELINE_DIR = _SRC_DIR / "claude_reflect" / "agents" / "pipeline"
 
 
 _FORBIDDEN_SYMBOLS = (
@@ -66,8 +66,8 @@ def _require_new_modules_present() -> None:
     exist. This is what makes every test in this file fail at Session A
     time and turn green only once Session B has done the cutover work.
     """
-    from meta_harness.agents.pipeline import stage_4  # type: ignore  # noqa: F401
-    from meta_harness.agents.pipeline import orchestrator  # type: ignore  # noqa: F401
+    from claude_reflect.agents.pipeline import stage_4  # type: ignore  # noqa: F401
+    from claude_reflect.agents.pipeline import orchestrator  # type: ignore  # noqa: F401
 
 
 # ---------------------------------------------------------------------------
@@ -191,10 +191,10 @@ def test_evaluator_evaluate_remains_callable_after_cutover() -> None:
     function name must remain importable so existing callers do not
     break."""
     _require_new_modules_present()
-    from meta_harness.agents import evaluator  # type: ignore
+    from claude_reflect.agents import evaluator  # type: ignore
 
     assert hasattr(evaluator, "evaluate"), (
-        "meta_harness.agents.evaluator.evaluate must remain importable "
+        "claude_reflect.agents.evaluator.evaluate must remain importable "
         "after the step-15 cutover so the run loop's Phase 4 call site "
         "is not stranded."
     )

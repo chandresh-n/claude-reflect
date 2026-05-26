@@ -1,6 +1,6 @@
 # Scope boundaries
 
-The meta-harness's scope is narrow by design. This file states what is
+The claude-reflect's scope is narrow by design. This file states what is
 in scope, what is out of scope, and where the line is drawn. It
 complements `06-cross-cutting/deferred.md`: deferred features may
 become in-scope later; boundaries listed here are architectural
@@ -25,12 +25,12 @@ commitments unlikely to change.
 
 ## Out of scope
 
-- **Benchmark-driven optimization.** The meta-harness does not
+- **Benchmark-driven optimization.** The claude-reflect does not
   optimize against synthetic tasks. Signal comes from real session
   history.
 - **Team-wide configuration consensus.** Different humans on the same
   team will produce different configurations through different
-  meta-harness instances. The meta-harness does not enforce or
+  claude-reflect instances. The claude-reflect does not enforce or
   facilitate cross-user agreement.
 - **Fully autonomous configuration changes.** No proposal is ever
   applied without human review. The system proposes; the human
@@ -38,15 +38,15 @@ commitments unlikely to change.
 - **Background or always-on operation.** Every run is explicitly
   invoked.
 - **Cross-user or federated learning.** Knowledge bases are local.
-  What the meta-harness learns for user A is not shared with user
+  What the claude-reflect learns for user A is not shared with user
   B, even on the same repository.
 - **Grading of sessions, configurations, or proposals.** No scalar
   judgments are computed or stored.
 - **Automated adoption of forced-novelty or null-baseline proposals.**
-  These are still subject to human review. The meta-harness does not
+  These are still subject to human review. The claude-reflect does not
   auto-apply any change.
 - **External network access during runs.** All reads and writes are
-  local. The meta-harness does not call external APIs, download data,
+  local. The claude-reflect does not call external APIs, download data,
   or communicate with remote services during a run.
 
 ## Where the line is

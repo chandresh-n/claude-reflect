@@ -2,7 +2,7 @@
 
 ## Role
 
-The knowledge base is the meta-harness's persistent state. It lives in the
+The knowledge base is the claude-reflect's persistent state. It lives in the
 repository being optimized. Four layers, organized by authoritativeness:
 session logs (immutable source), decisions (git-tracked canonical temporal
 record), gap records and archive entries (structured records), and the
@@ -35,7 +35,7 @@ The knowledge base as a whole is queried by:
 The knowledge base lives in a dedicated directory within the repository.
 Conceptually organized as:
 
-- **Session logs**, not stored by the meta-harness; read from Claude
+- **Session logs**, not stored by the claude-reflect; read from Claude
   Code's session log directory. See `02-storage/session-logs.md`.
 - **Decisions**, a git branch with structured commits. See
   `02-storage/decisions-git.md`.
@@ -61,7 +61,7 @@ mechanisms are implementation choices. The spec requires only that:
 
 ## Invariants
 
-- Sessions are never modified by the meta-harness.
+- Sessions are never modified by the claude-reflect.
 - Decisions, once committed, are immutable except for specific fields
   (see `01-data-structures/decision-record.md`).
 - Gap records are append-only in existence (never deleted).

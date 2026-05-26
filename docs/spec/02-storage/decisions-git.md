@@ -3,7 +3,7 @@
 ## Role
 
 The decisions git branch is the canonical temporal record of every proposal
-the meta-harness has ever generated and every human response. It is the
+the claude-reflect has ever generated and every human response. It is the
 audit trail. Provenance, reversion, and inspection work through standard
 git tooling.
 
@@ -32,7 +32,7 @@ Read by:
 
 Two git branches are relevant:
 
-- **decisions branch.** A dedicated branch (e.g., named `meta-harness/decisions`)
+- **decisions branch.** A dedicated branch (e.g., named `claude-reflect/decisions`)
   that holds decision records as commits. Each decision is one or more
   commits on this branch. Commits may include structured data files
   (e.g., a markdown file or a JSON file per decision record), the exact
@@ -42,7 +42,7 @@ Two git branches are relevant:
 - **active configuration branch.** The main working branch of the
   repository, where actual configuration files (`CLAUDE.md`, `.claude/`
   contents, etc.) are merged. Accepted proposals merge their diffs here.
-  This branch is not meta-harness-specific; it is the normal configuration
+  This branch is not claude-reflect-specific; it is the normal configuration
   state Claude Code reads.
 
 - **proposal branches.** Ephemeral. Created during run loop Phase 5b when

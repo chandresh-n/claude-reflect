@@ -1,5 +1,5 @@
 """
-Decisions git branch operations — Step 3 of the meta-harness build.
+Decisions git branch operations — Step 3 of the claude-reflect build.
 
 Spec ref: docs/spec/02-storage/decisions-git.md
 
@@ -17,8 +17,8 @@ to callers). Worktrees are used to commit to the decisions branch in
 isolation.
 
 Branch naming:
-- decisions branch: meta-harness/decisions
-- proposal branches: meta-harness/proposal/<proposal_id>
+- decisions branch: claude-reflect/decisions
+- proposal branches: claude-reflect/proposal/<proposal_id>
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from meta_harness.storage.decision_record import (
+from claude_reflect.storage.decision_record import (
     format_commit_message,
     parse_commit_body,
 )
@@ -53,7 +53,7 @@ def _git(args: list[str], cwd: Path) -> str:
 
 
 def _proposal_branch_name(proposal_id: str) -> str:
-    return f"meta-harness/proposal/{proposal_id}"
+    return f"claude-reflect/proposal/{proposal_id}"
 
 
 # ---------------------------------------------------------------------------
@@ -67,7 +67,7 @@ def get_current_branch(repo: Path) -> str:
 
 def create_proposal_branch(repo: Path, proposal_id: str) -> None:
     """
-    Create a local branch named meta-harness/proposal/<proposal_id> from the
+    Create a local branch named claude-reflect/proposal/<proposal_id> from the
     current HEAD.
 
     Does not switch the checked-out branch.
@@ -77,7 +77,7 @@ def create_proposal_branch(repo: Path, proposal_id: str) -> None:
 
 def commit_decision(repo: Path, decision: dict) -> None:
     """
-    Commit *decision* to the meta-harness/decisions branch.
+    Commit *decision* to the claude-reflect/decisions branch.
 
     Uses a git worktree so that the caller's checked-out branch is not
     changed. The decision is written as a JSON file named <proposal_id>.json
@@ -100,7 +100,7 @@ def commit_decision(repo: Path, decision: dict) -> None:
         with os.fdopen(msg_fd, "w", encoding="utf-8") as f:
             f.write(commit_msg)
 
-        _git(["worktree", "add", str(worktree_path), "meta-harness/decisions"], repo)
+        _git(["worktree", "add", str(worktree_path), "claude-reflect/decisions"], repo)
         try:
             # Write the decision JSON file into the worktree.
             decision_file = worktree_path / f"{proposal_id}.json"
@@ -132,7 +132,7 @@ def commit_decision(repo: Path, decision: dict) -> None:
 
 def read_decision_from_commit(repo: Path, proposal_id: str) -> dict:
     """
-    Find the commit on meta-harness/decisions whose message contains
+    Find the commit on claude-reflect/decisions whose message contains
     'proposal_id: <proposal_id>' and parse the JSON body from that commit.
 
     Returns the decision record dict.
@@ -140,7 +140,7 @@ def read_decision_from_commit(repo: Path, proposal_id: str) -> dict:
     """
     result = subprocess.run(
         [
-            "git", "log", "meta-harness/decisions",
+            "git", "log", "claude-reflect/decisions",
             f"--grep=proposal_id: {proposal_id}",
             "--format=%H",
         ],
@@ -152,7 +152,7 @@ def read_decision_from_commit(repo: Path, proposal_id: str) -> dict:
     hashes = [h.strip() for h in result.stdout.splitlines() if h.strip()]
     if not hashes:
         raise ValueError(
-            f"No commit found on meta-harness/decisions for proposal_id: {proposal_id!r}"
+            f"No commit found on claude-reflect/decisions for proposal_id: {proposal_id!r}"
         )
 
     # Use the most recent matching commit.
@@ -170,7 +170,7 @@ def read_decision_from_commit(repo: Path, proposal_id: str) -> dict:
 
 def merge_proposal_branch(repo: Path, proposal_id: str) -> None:
     """
-    Merge the meta-harness/proposal/<proposal_id> branch into the currently
+    Merge the claude-reflect/proposal/<proposal_id> branch into the currently
     checked-out branch (the active configuration branch), then delete the
     proposal branch.
 
@@ -194,7 +194,7 @@ def merge_proposal_branch(repo: Path, proposal_id: str) -> None:
 
 def delete_proposal_branch(repo: Path, proposal_id: str) -> None:
     """
-    Delete the meta-harness/proposal/<proposal_id> branch without merging it.
+    Delete the claude-reflect/proposal/<proposal_id> branch without merging it.
 
     This is the rejected or author-failed path. Force-deletes (-D) because
     the branch may not have been merged into the active configuration branch.

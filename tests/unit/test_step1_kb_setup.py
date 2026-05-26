@@ -22,7 +22,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from meta_harness.storage.knowledge_base import setup
+from claude_reflect.storage.knowledge_base import setup
 
 
 # ---------------------------------------------------------------------------
@@ -30,8 +30,8 @@ from meta_harness.storage.knowledge_base import setup
 # ---------------------------------------------------------------------------
 
 def kb(repo: Path) -> Path:
-    """Return the .meta-harness/ root path."""
-    return repo / ".meta-harness"
+    """Return the .claude-reflect/ root path."""
+    return repo / ".claude-reflect"
 
 
 def cfg(repo: Path) -> dict:
@@ -79,7 +79,7 @@ REQUIRED_LOGGING_KEYS = ["default_verbosity", "save_full_transcripts"]
 
 class TestDirectoryLayout:
     """
-    After setup(), the .meta-harness/ directory layout must match the spec.
+    After setup(), the .claude-reflect/ directory layout must match the spec.
 
     Source: docs/IMPLEMENTATION.md § "Storage layout" and
             docs/spec/04-processes/run-loop.md Phase 1.

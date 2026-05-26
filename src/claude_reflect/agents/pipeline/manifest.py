@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Dict, List
 
-from meta_harness.storage.session_logs import Session
+from claude_reflect.storage.session_logs import Session
 
 _EXCERPT_MAX_CHARS = 200
 _EXCERPT_COUNT = 3

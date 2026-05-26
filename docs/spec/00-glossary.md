@@ -72,7 +72,7 @@ proposal: the four-part rationale plus structural tags plus the authoring
 addendum. The intent is the proposer's complete output; the author converts
 the intent into a concrete diff.
 
-**Knowledge base.** The meta-harness's persistent state, living in the repo.
+**Knowledge base.** The claude-reflect's persistent state, living in the repo.
 Four layers: session logs (immutable JSONL), decisions (git), gap records and
 archive entries (structured records), and the summary layer (regenerable
 markdown synthesis). Specified in `02-storage/knowledge-base.md`.
@@ -111,7 +111,7 @@ in `01-data-structures/proposal.md`.
 **Proposer.** An agent that reads evaluator output and the knowledge base,
 then produces proposals. Specified in `03-agents/proposer.md`.
 
-**Run.** One invocation of the meta-harness skill, from human invocation
+**Run.** One invocation of the claude-reflect skill, from human invocation
 through decision commit. Sequence of phases specified in
 `04-processes/run-loop.md`.
 
@@ -124,11 +124,11 @@ identifiers.
 
 **Skill (Claude Code skill).** A directory under `.claude/skills/<name>/`
 containing a `SKILL.md` and related files. Activated by Claude Code based on
-the skill's frontmatter. Part of the configuration the meta-harness proposes
+the skill's frontmatter. Part of the configuration the claude-reflect proposes
 changes to.
 
-**Skill (meta-harness skill).** The Claude Code skill that invokes the
-meta-harness itself. Not to be confused with the skills that are part of the
+**Skill (claude-reflect skill).** The Claude Code skill that invokes the
+claude-reflect itself. Not to be confused with the skills that are part of the
 configuration being optimized.
 
 **Structural fingerprint.** Summary metadata for an archive entry describing

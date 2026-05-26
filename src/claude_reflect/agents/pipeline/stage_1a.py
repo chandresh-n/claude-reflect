@@ -29,9 +29,9 @@ import json
 from pathlib import Path
 from typing import Any, List
 
-from meta_harness.agents._json_parsing import extract_json
-from meta_harness.agents.pipeline.cache import StageCache, cache_key
-from meta_harness.storage.session_logs import Session, Turn
+from claude_reflect.agents._json_parsing import extract_json
+from claude_reflect.agents.pipeline.cache import StageCache, cache_key
+from claude_reflect.storage.session_logs import Session, Turn
 
 # Bump this string whenever the stage-1a prompt is edited. It is part of
 # the cache key, so a bump silently invalidates this stage's cache

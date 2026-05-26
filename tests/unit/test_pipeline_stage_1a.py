@@ -25,7 +25,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from meta_harness.storage.session_logs import Session, ToolCall, Turn
+from claude_reflect.storage.session_logs import Session, ToolCall, Turn
 
 
 # ---------------------------------------------------------------------------
@@ -93,7 +93,7 @@ def _valid_description_for(session_id: str, turn_index: int,
 
 
 def test_stage_1a_module_importable() -> None:
-    from meta_harness.agents.pipeline.stage_1a import (  # type: ignore  # noqa: F401
+    from claude_reflect.agents.pipeline.stage_1a import (  # type: ignore  # noqa: F401
         describe_turn,
     )
 
@@ -101,7 +101,7 @@ def test_stage_1a_module_importable() -> None:
 def test_describe_turn_returns_dict_with_required_schema(tmp_path: Path) -> None:
     """Pin the schema for stage 1a's output.  Downstream stages
     consume these fields by name."""
-    from meta_harness.agents.pipeline.stage_1a import describe_turn  # type: ignore
+    from claude_reflect.agents.pipeline.stage_1a import describe_turn  # type: ignore
 
     t = _turn("how do tests run?", "use pytest")
     runner = _canned_runner(_valid_description_for("s1", 0))
@@ -136,18 +136,18 @@ def test_describe_turn_returns_dict_with_required_schema(tmp_path: Path) -> None
 def test_tool_actions_capture_read_file_path(tmp_path: Path) -> None:
     """For a Read tool call, tool_actions[*].target must be the file path
     so downstream stages can see *what* was read, not just `Read: 1`."""
-    from meta_harness.agents.pipeline.stage_1a import describe_turn  # type: ignore
+    from claude_reflect.agents.pipeline.stage_1a import describe_turn  # type: ignore
 
     t = _turn(
         "look at the evaluator",
         "reading it now",
-        tools=[("Read", {"file_path": "src/meta_harness/agents/evaluator.py"})],
+        tools=[("Read", {"file_path": "src/claude_reflect/agents/evaluator.py"})],
     )
     runner = _canned_runner(_valid_description_for(
         "s1", 0,
         tool_actions=[{
             "tool": "Read",
-            "target": "src/meta_harness/agents/evaluator.py",
+            "target": "src/claude_reflect/agents/evaluator.py",
             "outcome": "ok",
         }],
     ))
@@ -163,7 +163,7 @@ def test_tool_actions_capture_read_file_path(tmp_path: Path) -> None:
 
 
 def test_tool_actions_capture_bash_command(tmp_path: Path) -> None:
-    from meta_harness.agents.pipeline.stage_1a import describe_turn  # type: ignore
+    from claude_reflect.agents.pipeline.stage_1a import describe_turn  # type: ignore
 
     t = _turn(
         "run tests",
@@ -191,7 +191,7 @@ def test_tool_actions_surface_denied_outcome_for_mcp_tools(tmp_path: Path) -> No
     """The agentic-failure RCA showed batches stuck on denied MCP tool
     calls.  Stage 1a must surface that fact so pattern detection and
     gap-mining can see it as a distinct outcome, not as `error`."""
-    from meta_harness.agents.pipeline.stage_1a import describe_turn  # type: ignore
+    from claude_reflect.agents.pipeline.stage_1a import describe_turn  # type: ignore
 
     t = _turn(
         "ignore this — context for the model",
@@ -221,7 +221,7 @@ def test_tool_actions_accept_clustered_form_for_many_similar_calls(
     """A turn with 12 Reads can be collapsed into a single clustered
     tool_action with `count` and `targets` to keep the description compact.
     Both flat and clustered forms must be schema-acceptable."""
-    from meta_harness.agents.pipeline.stage_1a import describe_turn  # type: ignore
+    from claude_reflect.agents.pipeline.stage_1a import describe_turn  # type: ignore
 
     targets = [f"src/file_{i}.py" for i in range(12)]
     t = _turn(
@@ -259,7 +259,7 @@ def test_describe_turn_caches_result_and_skips_runner_on_rerun(
 ) -> None:
     """First call invokes the runner.  Second call on the same turn
     must reuse the cache and invoke the runner zero additional times."""
-    from meta_harness.agents.pipeline.stage_1a import describe_turn  # type: ignore
+    from claude_reflect.agents.pipeline.stage_1a import describe_turn  # type: ignore
 
     t = _turn("hi", "hello")
     runner = _canned_runner(_valid_description_for("s1", 0))
@@ -289,7 +289,7 @@ def test_one_turn_failure_does_not_taint_other_turns(tmp_path: Path) -> None:
     """A failed runner call for turn N must not prevent turn N+1's
     description from being produced.  This is the partial-with-flag
     failure policy at the per-turn granularity inside stage 1a."""
-    from meta_harness.agents.pipeline.stage_1a import (  # type: ignore
+    from claude_reflect.agents.pipeline.stage_1a import (  # type: ignore
         describe_session_turns,
     )
 

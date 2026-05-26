@@ -12,7 +12,7 @@ Pins (HARD — from docs/PLAN.md Step 14):
   - output is a list of pass_classification dicts whose union covers
     every turn of the session non-overlappingly (no gaps, no overlaps)
   - output schema matches the spec's pass_classification shape
-  - cache lives under .meta-harness/eval-cache/stage-2/ and cascades
+  - cache lives under .claude-reflect/eval-cache/stage-2/ and cascades
     on upstream draft change
   - no scalar grades anywhere
 
@@ -117,13 +117,13 @@ def _coverage_check(pass_classifications: list[dict],
 
 
 def test_stage_2_module_importable() -> None:
-    from meta_harness.agents.pipeline.stage_2 import (  # type: ignore  # noqa: F401
+    from claude_reflect.agents.pipeline.stage_2 import (  # type: ignore  # noqa: F401
         refine_session_passes,
     )
 
 
 def test_stage_2_exposes_prompt_version() -> None:
-    from meta_harness.agents.pipeline import stage_2  # type: ignore
+    from claude_reflect.agents.pipeline import stage_2  # type: ignore
 
     assert hasattr(stage_2, "STAGE_2_PROMPT_VERSION")
     assert isinstance(stage_2.STAGE_2_PROMPT_VERSION, str)
@@ -141,7 +141,7 @@ def test_refine_session_passes_covers_every_turn_no_gaps_no_overlaps(
     """The spec invariant for pass_classifications is non-overlapping
     coverage of every turn in the session. Stage 2 must enforce that
     even when the upstream stage 1b drafts overlap at window seams."""
-    from meta_harness.agents.pipeline.stage_2 import refine_session_passes  # type: ignore
+    from claude_reflect.agents.pipeline.stage_2 import refine_session_passes  # type: ignore
 
     # Two windows overlap at the seam (turn 19 appears in both drafts).
     drafts = [
@@ -170,7 +170,7 @@ def test_refine_session_passes_covers_every_turn_no_gaps_no_overlaps(
 def test_refine_session_passes_output_schema_matches_spec(
     tmp_path: Path,
 ) -> None:
-    from meta_harness.agents.pipeline.stage_2 import refine_session_passes  # type: ignore
+    from claude_reflect.agents.pipeline.stage_2 import refine_session_passes  # type: ignore
 
     drafts = [_draft("s1", 0, 2)]
     runner = MagicMock()
@@ -210,7 +210,7 @@ def test_refine_session_passes_output_schema_matches_spec(
 
 
 def test_refine_session_passes_no_scalar_grades(tmp_path: Path) -> None:
-    from meta_harness.agents.pipeline.stage_2 import refine_session_passes  # type: ignore
+    from claude_reflect.agents.pipeline.stage_2 import refine_session_passes  # type: ignore
 
     drafts = [_draft("s1", 0, 2)]
     runner = MagicMock()
@@ -235,7 +235,7 @@ def test_refine_session_passes_no_scalar_grades(tmp_path: Path) -> None:
 def test_refine_session_passes_writes_cache_under_stage_2_namespace(
     tmp_path: Path,
 ) -> None:
-    from meta_harness.agents.pipeline.stage_2 import refine_session_passes  # type: ignore
+    from claude_reflect.agents.pipeline.stage_2 import refine_session_passes  # type: ignore
 
     drafts = [_draft("s1", 0, 2)]
     runner = MagicMock()
@@ -248,7 +248,7 @@ def test_refine_session_passes_writes_cache_under_stage_2_namespace(
         runner=runner, repo=tmp_path, model="m",
     )
 
-    cache_dir = tmp_path / ".meta-harness" / "eval-cache" / "stage-2"
+    cache_dir = tmp_path / ".claude-reflect" / "eval-cache" / "stage-2"
     assert cache_dir.is_dir(), (
         f"Expected stage 2 cache dir at {cache_dir}"
     )
@@ -257,7 +257,7 @@ def test_refine_session_passes_writes_cache_under_stage_2_namespace(
 
 
 def test_refine_session_passes_cache_hit_skips_runner(tmp_path: Path) -> None:
-    from meta_harness.agents.pipeline.stage_2 import refine_session_passes  # type: ignore
+    from claude_reflect.agents.pipeline.stage_2 import refine_session_passes  # type: ignore
 
     drafts = [_draft("s1", 0, 2)]
     runner = MagicMock()
@@ -287,7 +287,7 @@ def test_refine_session_passes_cache_invalidates_when_drafts_change(
     """If stage 1b drafts change (e.g., a draft's pass_type was refined
     in an upstream rerun), the stage 2 cache for the session must miss
     and re-run."""
-    from meta_harness.agents.pipeline.stage_2 import refine_session_passes  # type: ignore
+    from claude_reflect.agents.pipeline.stage_2 import refine_session_passes  # type: ignore
 
     drafts = [_draft("s1", 0, 2)]
     runner = MagicMock()

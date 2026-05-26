@@ -1,8 +1,8 @@
 """
 Knowledge base setup — Phase 1 of the run loop.
 
-Creates the .meta-harness/ directory layout in the target repository,
-initializes the meta-harness/decisions git branch, and writes a default
+Creates the .claude-reflect/ directory layout in the target repository,
+initializes the claude-reflect/decisions git branch, and writes a default
 config.yaml with every required field.
 
 Idempotent: calling setup() on an already-initialized repository is a no-op.
@@ -70,14 +70,14 @@ def _git(args: list[str], cwd: Path) -> str:
 
 
 def _decisions_branch_exists(repo: Path) -> bool:
-    """Return True if the meta-harness/decisions branch exists in *repo*."""
+    """Return True if the claude-reflect/decisions branch exists in *repo*."""
     result = subprocess.run(
-        ["git", "branch", "--list", "meta-harness/decisions"],
+        ["git", "branch", "--list", "claude-reflect/decisions"],
         cwd=str(repo),
         capture_output=True,
         text=True,
     )
-    return "meta-harness/decisions" in result.stdout
+    return "claude-reflect/decisions" in result.stdout
 
 
 # ---------------------------------------------------------------------------
@@ -86,11 +86,11 @@ def _decisions_branch_exists(repo: Path) -> bool:
 
 def setup(repo: Path) -> None:
     """
-    Initialize the meta-harness knowledge base in the target git repository.
+    Initialize the claude-reflect knowledge base in the target git repository.
 
     Phase 1 of the run loop:
-    - Create the .meta-harness/ directory layout.
-    - Initialize the meta-harness/decisions git branch.
+    - Create the .claude-reflect/ directory layout.
+    - Initialize the claude-reflect/decisions git branch.
     - Initialize the summary layer directory with an empty index.
     - Write a default config.yaml with every required field.
 
@@ -101,7 +101,7 @@ def setup(repo: Path) -> None:
     Args:
         repo: Absolute path to the root of the target git repository.
     """
-    kb = repo / ".meta-harness"
+    kb = repo / ".claude-reflect"
 
     # -----------------------------------------------------------------------
     # Directory layout
@@ -141,9 +141,9 @@ def setup(repo: Path) -> None:
         )
 
     # -----------------------------------------------------------------------
-    # meta-harness/decisions git branch
+    # claude-reflect/decisions git branch
     # Created from the current HEAD. HEAD is not switched; the user's working
     # branch is unchanged after setup() returns.
     # -----------------------------------------------------------------------
     if not _decisions_branch_exists(repo):
-        _git(["branch", "meta-harness/decisions"], repo)
+        _git(["branch", "claude-reflect/decisions"], repo)

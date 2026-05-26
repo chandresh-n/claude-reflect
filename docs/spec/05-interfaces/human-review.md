@@ -30,7 +30,7 @@ skill reads their markings after they save and closes out Phase 7.
 Structure:
 
 ```
-# Meta-harness proposal batch
+# Claude-reflect proposal batch
 
 Run: <run_id>
 Window: <start> to <end>

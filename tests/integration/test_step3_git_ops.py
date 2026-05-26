@@ -19,13 +19,13 @@ from pathlib import Path
 
 import pytest
 
-from meta_harness.storage.decision_record import (
+from claude_reflect.storage.decision_record import (
     create_decision_record,
     format_commit_message,
     parse_commit_header,
     parse_commit_body,
 )
-from meta_harness.storage.decisions_git import (
+from claude_reflect.storage.decisions_git import (
     commit_decision,
     read_decision_from_commit,
     create_proposal_branch,
@@ -33,7 +33,7 @@ from meta_harness.storage.decisions_git import (
     delete_proposal_branch,
     get_current_branch,
 )
-from meta_harness.storage.knowledge_base import setup
+from claude_reflect.storage.knowledge_base import setup
 
 
 # ---------------------------------------------------------------------------
@@ -174,15 +174,15 @@ class TestProposalBranchLifecycleAccepted:
     """
     Accepted lifecycle:
       1. create_proposal_branch creates a branch named after the proposal_id.
-      2. commit_decision commits the decision record to meta-harness/decisions.
+      2. commit_decision commits the decision record to claude-reflect/decisions.
       3. merge_proposal_branch merges the proposal branch into the active
          configuration branch and removes the proposal branch.
     """
 
     def test_create_proposal_branch_creates_the_branch(self, kb_repo):
-        """create_proposal_branch must create a local branch meta-harness/proposal/<id>."""
+        """create_proposal_branch must create a local branch claude-reflect/proposal/<id>."""
         create_proposal_branch(kb_repo, "P-001")
-        assert _branch_exists(kb_repo, "meta-harness/proposal/P-001")
+        assert _branch_exists(kb_repo, "claude-reflect/proposal/P-001")
 
     def test_create_proposal_branch_does_not_switch_active_branch(self, kb_repo):
         """create_proposal_branch must not change the currently checked-out branch."""
@@ -191,11 +191,11 @@ class TestProposalBranchLifecycleAccepted:
         assert get_current_branch(kb_repo) == original_branch
 
     def test_commit_decision_adds_commit_to_decisions_branch(self, kb_repo):
-        """commit_decision must add at least one new commit to meta-harness/decisions."""
-        before = _get_all_commits_on_branch(kb_repo, "meta-harness/decisions")
+        """commit_decision must add at least one new commit to claude-reflect/decisions."""
+        before = _get_all_commits_on_branch(kb_repo, "claude-reflect/decisions")
         decision = create_decision_record(VALID_ACCEPTED_DECISION.copy())
         commit_decision(kb_repo, decision)
-        after = _get_all_commits_on_branch(kb_repo, "meta-harness/decisions")
+        after = _get_all_commits_on_branch(kb_repo, "claude-reflect/decisions")
         assert len(after) > len(before)
 
     def test_commit_decision_does_not_switch_active_branch(self, kb_repo):
@@ -214,7 +214,7 @@ class TestProposalBranchLifecycleAccepted:
         commit_decision(kb_repo, decision)
 
         result = subprocess.run(
-            ["git", "log", "meta-harness/decisions",
+            ["git", "log", "claude-reflect/decisions",
              "--grep=targeted_gap: G-001", "--format=%H"],
             cwd=str(kb_repo),
             capture_output=True,
@@ -232,7 +232,7 @@ class TestProposalBranchLifecycleAccepted:
         commit_decision(kb_repo, decision)
 
         result = subprocess.run(
-            ["git", "log", "meta-harness/decisions",
+            ["git", "log", "claude-reflect/decisions",
              "--grep=proposal_id: P-001", "--format=%H"],
             cwd=str(kb_repo),
             capture_output=True,
@@ -265,9 +265,9 @@ class TestProposalBranchLifecycleAccepted:
     def test_merge_proposal_branch_removes_the_proposal_branch(self, kb_repo):
         """After merge_proposal_branch, the proposal branch must no longer exist."""
         create_proposal_branch(kb_repo, "P-001")
-        assert _branch_exists(kb_repo, "meta-harness/proposal/P-001")
+        assert _branch_exists(kb_repo, "claude-reflect/proposal/P-001")
         merge_proposal_branch(kb_repo, "P-001")
-        assert not _branch_exists(kb_repo, "meta-harness/proposal/P-001")
+        assert not _branch_exists(kb_repo, "claude-reflect/proposal/P-001")
 
     def test_merge_proposal_branch_does_not_switch_active_branch(self, kb_repo):
         """merge_proposal_branch must leave the checked-out branch unchanged."""
@@ -286,7 +286,7 @@ class TestProposalBranchLifecycleAccepted:
 
         # Phase 1: proposal branch exists
         create_proposal_branch(kb_repo, "P-001")
-        assert _branch_exists(kb_repo, "meta-harness/proposal/P-001")
+        assert _branch_exists(kb_repo, "claude-reflect/proposal/P-001")
 
         # Phase 2: decision committed to decisions branch
         decision = create_decision_record(VALID_ACCEPTED_DECISION.copy())
@@ -294,7 +294,7 @@ class TestProposalBranchLifecycleAccepted:
 
         # Phase 3: merge (accepted) → proposal branch gone
         merge_proposal_branch(kb_repo, "P-001")
-        assert not _branch_exists(kb_repo, "meta-harness/proposal/P-001")
+        assert not _branch_exists(kb_repo, "claude-reflect/proposal/P-001")
 
         # Active branch unchanged
         assert get_current_branch(kb_repo) == original_branch
@@ -319,9 +319,9 @@ class TestProposalBranchLifecycleRejected:
     def test_delete_proposal_branch_removes_the_branch(self, kb_repo):
         """delete_proposal_branch must remove the proposal branch."""
         create_proposal_branch(kb_repo, "P-002")
-        assert _branch_exists(kb_repo, "meta-harness/proposal/P-002")
+        assert _branch_exists(kb_repo, "claude-reflect/proposal/P-002")
         delete_proposal_branch(kb_repo, "P-002")
-        assert not _branch_exists(kb_repo, "meta-harness/proposal/P-002")
+        assert not _branch_exists(kb_repo, "claude-reflect/proposal/P-002")
 
     def test_delete_proposal_branch_does_not_switch_active_branch(self, kb_repo):
         """delete_proposal_branch must leave the checked-out branch unchanged."""
@@ -339,13 +339,13 @@ class TestProposalBranchLifecycleRejected:
         original_branch = get_current_branch(kb_repo)
 
         create_proposal_branch(kb_repo, "P-002")
-        assert _branch_exists(kb_repo, "meta-harness/proposal/P-002")
+        assert _branch_exists(kb_repo, "claude-reflect/proposal/P-002")
 
         decision = create_decision_record(VALID_REJECTED_DECISION.copy())
         commit_decision(kb_repo, decision)
 
         delete_proposal_branch(kb_repo, "P-002")
-        assert not _branch_exists(kb_repo, "meta-harness/proposal/P-002")
+        assert not _branch_exists(kb_repo, "claude-reflect/proposal/P-002")
 
         assert get_current_branch(kb_repo) == original_branch
 
@@ -397,14 +397,14 @@ class TestProposalBranchLifecycleAuthorFailed:
 
         # Author-failed proposals may or may not have a proposal branch
         # depending on when the failure occurred. If created, it must be deleted.
-        if _branch_exists(kb_repo, "meta-harness/proposal/P-003"):
+        if _branch_exists(kb_repo, "claude-reflect/proposal/P-003"):
             delete_proposal_branch(kb_repo, "P-003")
 
         decision = create_decision_record(VALID_AUTHOR_FAILED_DECISION.copy())
         commit_decision(kb_repo, decision)
 
         # Confirm the branch is not present after the failure
-        assert not _branch_exists(kb_repo, "meta-harness/proposal/P-003")
+        assert not _branch_exists(kb_repo, "claude-reflect/proposal/P-003")
 
         # Active branch unchanged
         assert get_current_branch(kb_repo) == original_branch
@@ -454,7 +454,7 @@ class TestDecisionsBranchAppendOnly:
         d2 = create_decision_record(d2_data)
         commit_decision(kb_repo, d2)
 
-        commits = _get_all_commits_on_branch(kb_repo, "meta-harness/decisions")
+        commits = _get_all_commits_on_branch(kb_repo, "claude-reflect/decisions")
         # Both decisions should be visible as distinct commits
         messages = [_get_commit_message(kb_repo, h) for h in commits]
         has_p001 = any("proposal_id: P-001" in m for m in messages)
@@ -469,22 +469,22 @@ class TestDecisionsBranchAppendOnly:
 
     def test_commit_decision_stays_on_decisions_branch_not_active(self, kb_repo):
         """
-        Decision commits must go to meta-harness/decisions, not the active
+        Decision commits must go to claude-reflect/decisions, not the active
         configuration branch.
         """
         original_branch = get_current_branch(kb_repo)
         before_active = _get_all_commits_on_branch(kb_repo, original_branch)
-        before_decisions = _get_all_commits_on_branch(kb_repo, "meta-harness/decisions")
+        before_decisions = _get_all_commits_on_branch(kb_repo, "claude-reflect/decisions")
 
         decision = create_decision_record(VALID_ACCEPTED_DECISION.copy())
         commit_decision(kb_repo, decision)
 
         after_active = _get_all_commits_on_branch(kb_repo, original_branch)
-        after_decisions = _get_all_commits_on_branch(kb_repo, "meta-harness/decisions")
+        after_decisions = _get_all_commits_on_branch(kb_repo, "claude-reflect/decisions")
 
         assert len(after_active) == len(before_active), (
             "commit_decision must not add commits to the active config branch."
         )
         assert len(after_decisions) > len(before_decisions), (
-            "commit_decision must add commits to meta-harness/decisions."
+            "commit_decision must add commits to claude-reflect/decisions."
         )

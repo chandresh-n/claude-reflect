@@ -28,7 +28,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from meta_harness.cli import main, build_parser, ReviewCommand, StatusCommand, MaintenanceCommand
+from claude_reflect.cli import main, build_parser, ReviewCommand, StatusCommand, MaintenanceCommand
 
 
 # ---------------------------------------------------------------------------
@@ -59,7 +59,7 @@ def _init_git_repo(path: Path) -> None:
 
 def _setup_kb(path: Path) -> None:
     """Initialize the knowledge base so that the repo is not 'fresh'."""
-    from meta_harness.storage.knowledge_base import setup
+    from claude_reflect.storage.knowledge_base import setup
     setup(path)
 
 
@@ -69,7 +69,7 @@ def _create_fixture_run_state(path: Path, run_id: str, status: str = "complete",
                                decisions: list | None = None,
                                pending_proposals: list | None = None) -> Path:
     """Create a fixture run-state file on disk."""
-    runs_dir = path / ".meta-harness" / "runs"
+    runs_dir = path / ".claude-reflect" / "runs"
     runs_dir.mkdir(parents=True, exist_ok=True)
     data = {
         "run_id": run_id,
@@ -97,7 +97,7 @@ def _make_proposal(proposal_id: str, title: str = "Test proposal") -> dict:
         "what": {
             "short_description": "Test change",
             "mechanism_prose": "Apply a test change",
-            "diff_reference": f"meta-harness/proposal/{proposal_id}",
+            "diff_reference": f"claude-reflect/proposal/{proposal_id}",
             "files_touched": ["test.py"],
         },
         "how": {"mechanism_prose": "Modify test.py"},
@@ -173,7 +173,7 @@ class TestStatusSubcommand:
         assert result["initialized"] is True
 
     def test_status_on_fresh_repo(self, tmp_path: Path) -> None:
-        """StatusCommand on a repo without .meta-harness/ reports uninitialized."""
+        """StatusCommand on a repo without .claude-reflect/ reports uninitialized."""
         _init_git_repo(tmp_path)
         cmd = StatusCommand(repo=tmp_path)
         result = cmd.execute()
@@ -327,9 +327,9 @@ class TestFreshRepoFirstInvocation:
     """First invocation in a fresh repo runs Phase 1 (setup) automatically."""
 
     def test_fresh_repo_triggers_setup(self, tmp_path: Path) -> None:
-        """Invoking review on a repo without .meta-harness/ triggers Phase 1."""
+        """Invoking review on a repo without .claude-reflect/ triggers Phase 1."""
         _init_git_repo(tmp_path)
-        assert not (tmp_path / ".meta-harness").exists()
+        assert not (tmp_path / ".claude-reflect").exists()
 
         cmd = ReviewCommand(repo=tmp_path, date_range="last 7 days", verbose=False)
 
@@ -343,18 +343,18 @@ class TestFreshRepoFirstInvocation:
             mock_make.return_value = mock_run_loop
             cmd.execute()
 
-        # After execution, .meta-harness/ should exist (Phase 1 ran)
-        assert (tmp_path / ".meta-harness").is_dir()
+        # After execution, .claude-reflect/ should exist (Phase 1 ran)
+        assert (tmp_path / ".claude-reflect").is_dir()
 
     def test_subsequent_invocation_skips_setup(self, tmp_path: Path) -> None:
         """Second invocation on an already-initialized repo skips Phase 1."""
         _init_git_repo(tmp_path)
         _setup_kb(tmp_path)
-        assert (tmp_path / ".meta-harness").is_dir()
+        assert (tmp_path / ".claude-reflect").is_dir()
 
         cmd = ReviewCommand(repo=tmp_path, date_range="last 7 days", verbose=False)
 
-        with patch("meta_harness.cli.kb_setup") as mock_setup, \
+        with patch("claude_reflect.cli.kb_setup") as mock_setup, \
              patch.object(cmd, "_make_run_loop") as mock_make:
             mock_state = MagicMock()
             mock_state.status = "complete"
@@ -367,7 +367,7 @@ class TestFreshRepoFirstInvocation:
 
         # kb_setup should not have been called since KB already exists
         # (This is validated through the run_loop's _phase_1_setup which
-        # checks if .meta-harness/ already exists)
+        # checks if .claude-reflect/ already exists)
 
 
 # ---------------------------------------------------------------------------
@@ -394,7 +394,7 @@ class TestProposalBatchMarkdown:
 
     def test_batch_markdown_structure_matches_spec(self, tmp_path: Path) -> None:
         """The rendered batch markdown follows the spec template structure."""
-        from meta_harness.cli import render_proposal_batch_markdown
+        from claude_reflect.cli import render_proposal_batch_markdown
 
         proposals = [
             _make_proposal("prop-001", "First proposal"),
@@ -421,7 +421,7 @@ class TestProposalBatchMarkdown:
 
     def test_batch_markdown_no_decorative_formatting(self, tmp_path: Path) -> None:
         """The batch markdown contains no decorative formatting elements."""
-        from meta_harness.cli import render_proposal_batch_markdown
+        from claude_reflect.cli import render_proposal_batch_markdown
 
         proposals = [_make_proposal("prop-001", "Test proposal")]
         author_results = {"prop-001": {"status": "success"}}
@@ -441,7 +441,7 @@ class TestProposalBatchMarkdown:
 
     def test_batch_markdown_author_failed_template(self, tmp_path: Path) -> None:
         """Author-failed proposals use the spec's author-failed template."""
-        from meta_harness.cli import render_proposal_batch_markdown
+        from claude_reflect.cli import render_proposal_batch_markdown
 
         proposals = [_make_proposal("prop-fail", "Failing proposal")]
         author_results = {
@@ -463,7 +463,7 @@ class TestProposalBatchMarkdown:
 
     def test_batch_markdown_decision_checkboxes(self, tmp_path: Path) -> None:
         """Successful proposals include Accept/Reject/Defer checkboxes."""
-        from meta_harness.cli import render_proposal_batch_markdown
+        from claude_reflect.cli import render_proposal_batch_markdown
 
         proposals = [_make_proposal("prop-001", "Test proposal")]
         author_results = {"prop-001": {"status": "success"}}
@@ -483,7 +483,7 @@ class TestProposalBatchMarkdown:
 
     def test_batch_markdown_no_decorative_on_empty_batch(self, tmp_path: Path) -> None:
         """Even an empty batch produces clean, non-decorative markdown."""
-        from meta_harness.cli import render_proposal_batch_markdown
+        from claude_reflect.cli import render_proposal_batch_markdown
 
         markdown = render_proposal_batch_markdown(
             run_id="run-test",
@@ -516,7 +516,7 @@ class TestCLIEntryPoint:
         """main() dispatches to the review subcommand."""
         _init_git_repo(tmp_path)
 
-        with patch("meta_harness.cli.ReviewCommand") as MockReview:
+        with patch("claude_reflect.cli.ReviewCommand") as MockReview:
             mock_instance = MagicMock()
             mock_instance.execute.return_value = {"status": "complete"}
             MockReview.return_value = mock_instance
@@ -528,7 +528,7 @@ class TestCLIEntryPoint:
         """main() dispatches to the status subcommand."""
         _init_git_repo(tmp_path)
 
-        with patch("meta_harness.cli.StatusCommand") as MockStatus:
+        with patch("claude_reflect.cli.StatusCommand") as MockStatus:
             mock_instance = MagicMock()
             mock_instance.execute.return_value = {"initialized": True}
             MockStatus.return_value = mock_instance
@@ -539,7 +539,7 @@ class TestCLIEntryPoint:
         """main() dispatches to the maintenance subcommand."""
         _init_git_repo(tmp_path)
 
-        with patch("meta_harness.cli.MaintenanceCommand") as MockMaintenance:
+        with patch("claude_reflect.cli.MaintenanceCommand") as MockMaintenance:
             mock_instance = MagicMock()
             mock_instance.execute.return_value = {"ran": True}
             MockMaintenance.return_value = mock_instance

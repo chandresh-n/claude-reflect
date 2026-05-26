@@ -30,13 +30,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from meta_harness.processes.run_loop import (
+from claude_reflect.processes.run_loop import (
     RunLoop,
     RunState,
     RunLoopError,
 )
-from meta_harness.storage.knowledge_base import setup
-from meta_harness.storage.session_logs import Session, Turn, ToolCall
+from claude_reflect.storage.knowledge_base import setup
+from claude_reflect.storage.session_logs import Session, Turn, ToolCall
 
 
 # ---------------------------------------------------------------------------
@@ -195,7 +195,7 @@ def _canned_author_result(
             "proposal_id": proposal_id,
             "diff_reference": "abc123",
             "files_touched": ["CLAUDE.md"],
-            "branch_name": f"meta-harness/proposal/{proposal_id}",
+            "branch_name": f"claude-reflect/proposal/{proposal_id}",
         }
     return {
         "status": "author_failed",
@@ -209,7 +209,7 @@ def _canned_author_result(
 
 @pytest.fixture
 def repo(tmp_path):
-    """Create an initialized git repo with meta-harness knowledge base."""
+    """Create an initialized git repo with claude-reflect knowledge base."""
     _init_git_repo(tmp_path)
     setup(tmp_path)
     return tmp_path
@@ -290,13 +290,13 @@ class TestPhaseSequence:
         state = loop.run()
 
         # Knowledge base should now exist
-        assert (tmp_path / ".meta-harness").is_dir()
-        assert (tmp_path / ".meta-harness" / "config.yaml").is_file()
+        assert (tmp_path / ".claude-reflect").is_dir()
+        assert (tmp_path / ".claude-reflect" / "config.yaml").is_file()
 
     def test_phase_1_is_noop_if_already_initialized(self, repo, sessions):
         """If the knowledge base already exists, Phase 1 is a no-op."""
         # Snapshot config before run
-        config_before = (repo / ".meta-harness" / "config.yaml").read_bytes()
+        config_before = (repo / ".claude-reflect" / "config.yaml").read_bytes()
 
         loop = RunLoop(
             repo=repo,
@@ -312,7 +312,7 @@ class TestPhaseSequence:
         loop.run()
 
         # Config should be byte-identical
-        config_after = (repo / ".meta-harness" / "config.yaml").read_bytes()
+        config_after = (repo / ".claude-reflect" / "config.yaml").read_bytes()
         assert config_before == config_after
 
     def test_phase_5a_completes_before_any_5b(self, repo, sessions):

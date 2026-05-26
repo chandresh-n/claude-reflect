@@ -176,7 +176,7 @@ brief reasons), whether a forced-novelty proposal was generated.
   must carry everything the author needs.
 - **Prefer smaller changes.** A minimal change that addresses a gap is
   preferable to an ambitious change that addresses several. The
-  meta-harness is evolutionary; future runs compound.
+  claude-reflect is evolutionary; future runs compound.
 - **Simplicity criterion.** If a proposal could equivalently be stated
   as "remove something" or "add something," prefer remove when possible.
 - **Multi-dimensional prioritization.** Do not collapse frequency ×

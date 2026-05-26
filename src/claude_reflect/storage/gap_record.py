@@ -1,5 +1,5 @@
 """
-Gap record read/write — Step 2 of the meta-harness build.
+Gap record read/write — Step 2 of the claude-reflect build.
 
 Spec ref: docs/spec/01-data-structures/gap-record.md
 
@@ -139,7 +139,7 @@ def _validate_record(data: dict) -> None:
 
 
 def _gaps_dir(repo: Path) -> Path:
-    return repo / ".meta-harness" / "gaps"
+    return repo / ".claude-reflect" / "gaps"
 
 
 def _record_path(repo: Path, gap_id: str) -> Path:
@@ -153,7 +153,7 @@ def _record_path(repo: Path, gap_id: str) -> Path:
 def create_gap_record(repo: Path, data: dict) -> dict:
     """
     Validate *data* against the spec schema, assign a unique identifier,
-    persist to .meta-harness/gaps/<gap_id>.json, and return the full record.
+    persist to .claude-reflect/gaps/<gap_id>.json, and return the full record.
 
     Args:
         repo: Root of the target git repository.

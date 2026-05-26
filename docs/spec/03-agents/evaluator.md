@@ -4,7 +4,7 @@
 
 The evaluator reads session logs and produces structured observations of
 what happened. It does not grade, rank, or recommend. Its output is the
-proposer's primary input and is the means by which the meta-harness
+proposer's primary input and is the means by which the claude-reflect
 extracts signal from real work.
 
 The evaluator is spawned as a separate agent with its own context. It
@@ -143,7 +143,7 @@ constrain it).
 ## Explicitly excluded
 
 - Access to the proposer's prior output.
-- Access to decisions the meta-harness has made (the evaluator does not
+- Access to decisions the claude-reflect has made (the evaluator does not
   need this context; the proposer does).
 - Any ranking or scoring.
 - Any proposal generation.

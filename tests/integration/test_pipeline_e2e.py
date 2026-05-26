@@ -29,7 +29,7 @@ from typing import Any
 
 import pytest
 
-from meta_harness.storage.session_logs import Session, Turn
+from claude_reflect.storage.session_logs import Session, Turn
 
 
 _FORBIDDEN_SCALAR_KEYS = {
@@ -231,7 +231,7 @@ def _make_session(session_id: str, n_turns: int) -> Session:
 
 
 def test_full_pipeline_produces_spec_shaped_document(tmp_path: Path) -> None:
-    from meta_harness.agents.pipeline.orchestrator import evaluate  # type: ignore
+    from claude_reflect.agents.pipeline.orchestrator import evaluate  # type: ignore
 
     sessions = [
         _make_session("s1", n_turns=3),
@@ -262,7 +262,7 @@ def test_full_pipeline_produces_spec_shaped_document(tmp_path: Path) -> None:
 def test_full_pipeline_exhaustive_over_the_window(tmp_path: Path) -> None:
     """Spec invariant: every turn has an observation, every pass has a
     classification, every session has a narrative."""
-    from meta_harness.agents.pipeline.orchestrator import evaluate  # type: ignore
+    from claude_reflect.agents.pipeline.orchestrator import evaluate  # type: ignore
 
     sessions = [
         _make_session("s1", n_turns=2),
@@ -296,7 +296,7 @@ def test_full_pipeline_exhaustive_over_the_window(tmp_path: Path) -> None:
 def test_full_pipeline_pass_classifications_cover_each_session(
     tmp_path: Path,
 ) -> None:
-    from meta_harness.agents.pipeline.orchestrator import evaluate  # type: ignore
+    from claude_reflect.agents.pipeline.orchestrator import evaluate  # type: ignore
 
     sessions = [_make_session("s1", n_turns=3)]
     runner = StageDispatchRunner()
@@ -319,7 +319,7 @@ def test_full_pipeline_pass_classifications_cover_each_session(
 
 
 def test_full_pipeline_no_scalar_grades_in_output(tmp_path: Path) -> None:
-    from meta_harness.agents.pipeline.orchestrator import evaluate  # type: ignore
+    from claude_reflect.agents.pipeline.orchestrator import evaluate  # type: ignore
 
     sessions = [_make_session("s1", n_turns=3)]
     runner = StageDispatchRunner()

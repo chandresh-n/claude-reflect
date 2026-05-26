@@ -1,7 +1,7 @@
 """Evaluator agent — thin shim over the staged evaluator pipeline.
 
 The implementation lives in
-``meta_harness.agents.pipeline.orchestrator``; this module preserves
+``claude_reflect.agents.pipeline.orchestrator``; this module preserves
 the historical public surface (``evaluate``, ``EvaluatorError``,
 ``evaluate_from_jsonl``) so callers like the run loop and the CLI do
 not have to be rewired.
@@ -13,8 +13,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List, Optional
 
-from meta_harness.agents.pipeline.orchestrator import evaluate as _orchestrator_evaluate
-from meta_harness.storage.session_logs import Session, SessionLogReader
+from claude_reflect.agents.pipeline.orchestrator import evaluate as _orchestrator_evaluate
+from claude_reflect.storage.session_logs import Session, SessionLogReader
 
 
 class EvaluatorError(Exception):

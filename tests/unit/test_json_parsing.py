@@ -10,7 +10,7 @@ import json
 
 import pytest
 
-from meta_harness.agents._json_parsing import extract_json
+from claude_reflect.agents._json_parsing import extract_json
 
 
 def test_direct_json_object() -> None:

@@ -2,7 +2,7 @@
 Subprocess wrapper for invoking Claude Code CLI as a subagent.
 
 Replaces direct Anthropic SDK calls with `claude -p` subprocess invocations,
-enabling the meta-harness to run on a Claude Max subscription (OAuth)
+enabling the claude-reflect to run on a Claude Max subscription (OAuth)
 without separate API billing.
 
 Includes:
@@ -230,7 +230,7 @@ def _invoke_claude_once(
         sp_path = sp_file.name
 
     # Run from a clean cwd (system tempdir) so `claude -p` does NOT
-    # auto-discover the meta-harness repo's CLAUDE.md and inject its
+    # auto-discover the claude-reflect repo's CLAUDE.md and inject its
     # text into the agent's system prompt.  Combined with
     # --strict-mcp-config (no MCP servers) and --disable-slash-commands
     # (no skills/slash commands), this keeps the model's context limited

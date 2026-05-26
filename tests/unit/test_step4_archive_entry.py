@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from meta_harness.storage.archive_entry import (
+from claude_reflect.storage.archive_entry import (
     ArchiveEntryError,
     create_archive_entry,
     read_archive_entry,
@@ -120,7 +120,7 @@ class TestRoundtrip:
     def test_file_written_as_json(self, tmp_path):
         kwargs = _make_entry_kwargs()
         create_archive_entry(base_dir=tmp_path, **kwargs)
-        archive_dir = tmp_path / ".meta-harness" / "archive"
+        archive_dir = tmp_path / ".claude-reflect" / "archive"
         json_path = archive_dir / "entry-001.json"
         assert json_path.exists()
         # Must be valid JSON
@@ -402,7 +402,7 @@ class TestLifecycleTransitions:
             end_time=ts,
             base_dir=tmp_path,
         )
-        archive_dir = tmp_path / ".meta-harness" / "archive"
+        archive_dir = tmp_path / ".claude-reflect" / "archive"
         assert (archive_dir / "entry-001.json").exists()
 
     def test_qualitative_position_null_by_default(self, tmp_path):
@@ -415,7 +415,7 @@ class TestLifecycleTransitions:
         Once qualitative_position is written (non-null), it cannot be
         changed by a subsequent update.
         """
-        from meta_harness.storage.archive_entry import set_qualitative_position
+        from claude_reflect.storage.archive_entry import set_qualitative_position
 
         ts = datetime(2024, 2, 1, 0, 0, 0, tzinfo=timezone.utc)
         create_archive_entry(base_dir=tmp_path, **_make_entry_kwargs())
@@ -432,7 +432,7 @@ class TestLifecycleTransitions:
 
     def test_qualitative_position_only_settable_after_active_at_end(self, tmp_path):
         """Cannot write qualitative_position while entry is still active."""
-        from meta_harness.storage.archive_entry import set_qualitative_position
+        from claude_reflect.storage.archive_entry import set_qualitative_position
 
         create_archive_entry(base_dir=tmp_path, **_make_entry_kwargs())
         with pytest.raises((ArchiveEntryError, ValueError)):

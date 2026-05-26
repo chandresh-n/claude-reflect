@@ -3,19 +3,19 @@ Session A failing-gate tests for step 15 — pipeline orchestrator.
 
 The orchestrator sequences stages 1a → 1b → 2 → 3 → 4 over the
 session window, surfaces per-stage progress under
-``.meta-harness/logs/eval/<timestamp>/stages/``, propagates
+``.claude-reflect/logs/eval/<timestamp>/stages/``, propagates
 partial-completion flags through to the final
 ``session_narratives`` without aborting, and uses the per-stage
 caches so a re-run with identical inputs makes zero model calls.
 
 Pins (HARD — from docs/PLAN.md Step 15):
 
-  - module is importable from ``meta_harness.agents.pipeline.orchestrator``
+  - module is importable from ``claude_reflect.agents.pipeline.orchestrator``
     and exposes ``evaluate``
   - sequencing: with mocked stages 1a→1b→2→3→4, the orchestrator
     invokes them in order and threads each stage's output into the
     next; per-stage progress lands under
-    ``.meta-harness/logs/eval/<timestamp>/stages/``
+    ``.claude-reflect/logs/eval/<timestamp>/stages/``
   - partial-failure propagation: a stage 1b window failure on one
     session sets ``partial_completion=True`` on that session's
     narrative in the final output WITHOUT aborting the run or
@@ -42,7 +42,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from meta_harness.storage.session_logs import Session, Turn
+from claude_reflect.storage.session_logs import Session, Turn
 
 
 _FORBIDDEN_SCALAR_KEYS = {
@@ -277,7 +277,7 @@ def _make_session(session_id: str, n_turns: int = 3) -> Session:
 
 
 def test_orchestrator_module_importable() -> None:
-    from meta_harness.agents.pipeline.orchestrator import (  # type: ignore  # noqa: F401
+    from claude_reflect.agents.pipeline.orchestrator import (  # type: ignore  # noqa: F401
         evaluate,
     )
 
@@ -287,7 +287,7 @@ def test_orchestrator_evaluate_accepts_runner_injection(
 ) -> None:
     """The orchestrator's ``evaluate`` must accept a ``runner`` kwarg so
     tests can inject a mock without touching real Claude subprocesses."""
-    from meta_harness.agents.pipeline.orchestrator import evaluate  # type: ignore
+    from claude_reflect.agents.pipeline.orchestrator import evaluate  # type: ignore
 
     runner = StageDispatchRunner()
     sessions = [_make_session("s1", n_turns=2)]
@@ -306,7 +306,7 @@ def test_orchestrator_evaluate_accepts_runner_injection(
 
 
 def test_orchestrator_sequences_all_five_stages(tmp_path: Path) -> None:
-    from meta_harness.agents.pipeline.orchestrator import evaluate  # type: ignore
+    from claude_reflect.agents.pipeline.orchestrator import evaluate  # type: ignore
 
     runner = StageDispatchRunner()
     sessions = [_make_session("s1", n_turns=3),
@@ -334,16 +334,16 @@ def test_orchestrator_sequences_all_five_stages(tmp_path: Path) -> None:
 
 def test_orchestrator_writes_per_stage_progress_logs(tmp_path: Path) -> None:
     """Per-stage progress lands under
-    ``.meta-harness/logs/eval/<timestamp>/stages/``. The orchestrator
+    ``.claude-reflect/logs/eval/<timestamp>/stages/``. The orchestrator
     creates ONE timestamped run dir per invocation and a ``stages/``
     subdir inside it."""
-    from meta_harness.agents.pipeline.orchestrator import evaluate  # type: ignore
+    from claude_reflect.agents.pipeline.orchestrator import evaluate  # type: ignore
 
     runner = StageDispatchRunner()
     sessions = [_make_session("s1", n_turns=2)]
     evaluate(sessions=sessions, repo=tmp_path, model="m", runner=runner)
 
-    log_root = tmp_path / ".meta-harness" / "logs" / "eval"
+    log_root = tmp_path / ".claude-reflect" / "logs" / "eval"
     assert log_root.is_dir(), (
         f"orchestrator must create the eval log root at {log_root}"
     )
@@ -372,7 +372,7 @@ def test_orchestrator_writes_per_stage_progress_logs(tmp_path: Path) -> None:
 def test_orchestrator_final_output_has_exactly_four_spec_keys(
     tmp_path: Path,
 ) -> None:
-    from meta_harness.agents.pipeline.orchestrator import evaluate  # type: ignore
+    from claude_reflect.agents.pipeline.orchestrator import evaluate  # type: ignore
 
     runner = StageDispatchRunner()
     sessions = [_make_session("s1", n_turns=2)]
@@ -399,7 +399,7 @@ def test_orchestrator_final_output_has_exactly_four_spec_keys(
 def test_orchestrator_final_output_has_no_scalar_grades(
     tmp_path: Path,
 ) -> None:
-    from meta_harness.agents.pipeline.orchestrator import evaluate  # type: ignore
+    from claude_reflect.agents.pipeline.orchestrator import evaluate  # type: ignore
 
     runner = StageDispatchRunner()
     sessions = [_make_session("s1", n_turns=2)]
@@ -416,7 +416,7 @@ def test_orchestrator_final_output_has_no_scalar_grades(
 def test_orchestrator_produces_one_narrative_per_session(
     tmp_path: Path,
 ) -> None:
-    from meta_harness.agents.pipeline.orchestrator import evaluate  # type: ignore
+    from claude_reflect.agents.pipeline.orchestrator import evaluate  # type: ignore
 
     runner = StageDispatchRunner()
     sessions = [_make_session("s1", n_turns=2),
@@ -443,7 +443,7 @@ def test_orchestrator_propagates_partial_completion_per_session(
     """A stage 1b window failure on session s1 must produce a narrative
     for s1 with ``partial_completion=True`` while s2 finishes cleanly
     (no flag) and the run does NOT abort or drop s1."""
-    from meta_harness.agents.pipeline.orchestrator import evaluate  # type: ignore
+    from claude_reflect.agents.pipeline.orchestrator import evaluate  # type: ignore
 
     def fail_on_s1_stage1b(stage: str, system_prompt: str, user_prompt: str) -> bool:
         if stage != "1b":
@@ -485,7 +485,7 @@ def test_orchestrator_identical_rerun_makes_zero_model_calls(
 ) -> None:
     """A re-run with identical inputs must hit every stage's cache and
     invoke the runner zero times."""
-    from meta_harness.agents.pipeline.orchestrator import evaluate  # type: ignore
+    from claude_reflect.agents.pipeline.orchestrator import evaluate  # type: ignore
 
     sessions = [_make_session("s1", n_turns=3),
                 _make_session("s2", n_turns=3)]
@@ -530,7 +530,7 @@ def test_orchestrator_new_session_only_re_runs_new_session_and_stage4(
     """Adding one new session to the window must only re-run that
     session's 1a/1b/2/3, plus the corpus-level stage 4. Previously
     cached sessions hit their per-stage caches."""
-    from meta_harness.agents.pipeline.orchestrator import evaluate  # type: ignore
+    from claude_reflect.agents.pipeline.orchestrator import evaluate  # type: ignore
 
     first_sessions = [_make_session("s1", n_turns=3),
                       _make_session("s2", n_turns=3)]

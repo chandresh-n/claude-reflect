@@ -1,6 +1,6 @@
 """Per-stage cache for the evaluator pipeline.
 
-Caches are written to ``<repo>/.meta-harness/eval-cache/stage-<id>/<key>.json``.
+Caches are written to ``<repo>/.claude-reflect/eval-cache/stage-<id>/<key>.json``.
 The key derives from ``(stage_id, model, prompt_version, content)`` so:
 
   - Each stage has an isolated namespace (no collisions across stages).
@@ -50,7 +50,7 @@ class StageCache:
         self._repo = Path(repo)
         self._stage_id = stage_id
         self._dir = (
-            self._repo / ".meta-harness" / "eval-cache" / f"stage-{stage_id}"
+            self._repo / ".claude-reflect" / "eval-cache" / f"stage-{stage_id}"
         )
 
     def _path_for(self, key: str) -> Path:

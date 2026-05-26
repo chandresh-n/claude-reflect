@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-from meta_harness.storage.knowledge_base import setup
+from claude_reflect.storage.knowledge_base import setup
 
 
 # ---------------------------------------------------------------------------
@@ -70,11 +70,11 @@ def _diff_snapshots(before: dict[str, str], after: dict[str, str]) -> list[str]:
 
 class TestDecisionsBranch:
     """
-    setup() must create the meta-harness/decisions git branch.
+    setup() must create the claude-reflect/decisions git branch.
     After setup(), HEAD must remain on the original active branch.
 
     Spec: docs/IMPLEMENTATION.md § "Git structure"
-      'Decisions branch. Named meta-harness/decisions.'
+      'Decisions branch. Named claude-reflect/decisions.'
     Spec: docs/spec/04-processes/run-loop.md Phase 1
       'Initialize the decisions git branch.'
     Gate: docs/PLAN.md Step 1
@@ -83,21 +83,21 @@ class TestDecisionsBranch:
 
     def test_decisions_branch_exists_after_setup(self, tmp_git_repo):
         setup(tmp_git_repo)
-        branches = _git(["branch", "--list", "meta-harness/decisions"], tmp_git_repo)
-        assert "meta-harness/decisions" in branches, (
-            "Expected branch 'meta-harness/decisions' to exist after setup(). "
+        branches = _git(["branch", "--list", "claude-reflect/decisions"], tmp_git_repo)
+        assert "claude-reflect/decisions" in branches, (
+            "Expected branch 'claude-reflect/decisions' to exist after setup(). "
             f"git branch --list output: {branches!r}"
         )
 
     def test_head_is_not_on_decisions_branch_after_setup(self, tmp_git_repo):
         """
         setup() must leave HEAD on the original working branch, not switch
-        to meta-harness/decisions.
+        to claude-reflect/decisions.
         """
         setup(tmp_git_repo)
         current = _git(["rev-parse", "--abbrev-ref", "HEAD"], tmp_git_repo)
-        assert current != "meta-harness/decisions", (
-            "setup() must not leave HEAD on 'meta-harness/decisions'. "
+        assert current != "claude-reflect/decisions", (
+            "setup() must not leave HEAD on 'claude-reflect/decisions'. "
             f"Current HEAD: {current!r}"
         )
 
@@ -130,14 +130,14 @@ class TestIdempotency:
 
     def test_file_state_is_byte_identical_after_second_setup(self, tmp_git_repo):
         """
-        All files under .meta-harness/ must have the same content after the
+        All files under .claude-reflect/ must have the same content after the
         second call to setup() as after the first call.
         """
         setup(tmp_git_repo)
-        snapshot_1 = _hash_directory(tmp_git_repo / ".meta-harness")
+        snapshot_1 = _hash_directory(tmp_git_repo / ".claude-reflect")
 
         setup(tmp_git_repo)
-        snapshot_2 = _hash_directory(tmp_git_repo / ".meta-harness")
+        snapshot_2 = _hash_directory(tmp_git_repo / ".claude-reflect")
 
         diffs = _diff_snapshots(snapshot_1, snapshot_2)
         assert not diffs, (
@@ -152,15 +152,15 @@ class TestIdempotency:
         """
         setup(tmp_git_repo)
         files_1 = {
-            str(p.relative_to(tmp_git_repo / ".meta-harness"))
-            for p in (tmp_git_repo / ".meta-harness").rglob("*")
+            str(p.relative_to(tmp_git_repo / ".claude-reflect"))
+            for p in (tmp_git_repo / ".claude-reflect").rglob("*")
             if p.is_file()
         }
 
         setup(tmp_git_repo)
         files_2 = {
-            str(p.relative_to(tmp_git_repo / ".meta-harness"))
-            for p in (tmp_git_repo / ".meta-harness").rglob("*")
+            str(p.relative_to(tmp_git_repo / ".claude-reflect"))
+            for p in (tmp_git_repo / ".claude-reflect").rglob("*")
             if p.is_file()
         }
 
@@ -171,17 +171,17 @@ class TestIdempotency:
 
     def test_decisions_branch_tip_unchanged_after_second_setup(self, tmp_git_repo):
         """
-        The commit SHA at meta-harness/decisions must be the same after
+        The commit SHA at claude-reflect/decisions must be the same after
         the first and second calls to setup(). No extra commits on second run.
         """
         setup(tmp_git_repo)
-        sha_1 = _git(["rev-parse", "meta-harness/decisions"], tmp_git_repo)
+        sha_1 = _git(["rev-parse", "claude-reflect/decisions"], tmp_git_repo)
 
         setup(tmp_git_repo)
-        sha_2 = _git(["rev-parse", "meta-harness/decisions"], tmp_git_repo)
+        sha_2 = _git(["rev-parse", "claude-reflect/decisions"], tmp_git_repo)
 
         assert sha_1 == sha_2, (
-            "setup() committed extra commits to 'meta-harness/decisions' on the second call. "
+            "setup() committed extra commits to 'claude-reflect/decisions' on the second call. "
             f"SHA before: {sha_1}, SHA after: {sha_2}. "
             "setup() must be a no-op when the knowledge base already exists."
         )

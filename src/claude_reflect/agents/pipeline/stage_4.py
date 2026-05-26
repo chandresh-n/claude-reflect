@@ -9,7 +9,7 @@ and identifies recurring inefficiency patterns. Output is a list of
 Side effects (the gap-record knowledge base):
 
   - Each ``gap_observation`` with ``matched_gap_id=None`` creates a new
-    gap-record file under ``.meta-harness/gaps/<gap_id>.json`` via the
+    gap-record file under ``.claude-reflect/gaps/<gap_id>.json`` via the
     public storage API. The returned observation has ``matched_gap_id``
     populated with the new record's identifier so downstream consumers
     can resolve back to canonical state.
@@ -22,7 +22,7 @@ Side effects (the gap-record knowledge base):
 
 Cache: the resolved observations (post-side-effect, with new
 ``matched_gap_id`` values populated) are written to
-``.meta-harness/eval-cache/stage-4/<key>.json``. A cache hit returns
+``.claude-reflect/eval-cache/stage-4/<key>.json``. A cache hit returns
 the cached resolved observations without invoking the runner and
 without re-firing side effects — so a re-run does not double-write
 evidence.
@@ -37,9 +37,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, List
 
-from meta_harness.agents._json_parsing import extract_json
-from meta_harness.agents.pipeline.cache import StageCache, cache_key
-from meta_harness.storage.gap_record import (
+from claude_reflect.agents._json_parsing import extract_json
+from claude_reflect.agents.pipeline.cache import StageCache, cache_key
+from claude_reflect.storage.gap_record import (
     create_gap_record,
     read_gap_record,
     update_gap_record,

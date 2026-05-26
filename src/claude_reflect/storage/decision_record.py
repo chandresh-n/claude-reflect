@@ -1,5 +1,5 @@
 """
-Decision record read/write — Step 3 of the meta-harness build.
+Decision record read/write — Step 3 of the claude-reflect build.
 
 Spec ref: docs/spec/01-data-structures/decision-record.md
 

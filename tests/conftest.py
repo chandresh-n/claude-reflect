@@ -1,5 +1,5 @@
 """
-Shared pytest fixtures for the meta-harness test suite.
+Shared pytest fixtures for the claude-reflect test suite.
 """
 import subprocess
 from pathlib import Path
@@ -14,7 +14,7 @@ def tmp_git_repo(tmp_path: Path) -> Path:
     commit on the default branch.
 
     Provides a clean, isolated git repo for tests that need to call setup()
-    and inspect the resulting .meta-harness/ state and git branches.
+    and inspect the resulting .claude-reflect/ state and git branches.
     """
     subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
     subprocess.run(

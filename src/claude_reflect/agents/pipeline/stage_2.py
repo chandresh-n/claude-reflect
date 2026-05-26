@@ -13,8 +13,8 @@ import json
 from pathlib import Path
 from typing import Any, List
 
-from meta_harness.agents._json_parsing import extract_json
-from meta_harness.agents.pipeline.cache import StageCache, cache_key
+from claude_reflect.agents._json_parsing import extract_json
+from claude_reflect.agents.pipeline.cache import StageCache, cache_key
 
 # Bump this string whenever the stage-2 prompt is edited. It is part of
 # the cache key, so a bump silently invalidates this stage's cache

@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-from meta_harness.processes.maintenance import (
+from claude_reflect.processes.maintenance import (
     should_trigger,
     transition_stale_gaps,
     reconcile_kind_vocabulary,
@@ -52,7 +52,7 @@ def _make_gap_record(
         "status": status,
         "related_proposals": [],
     }
-    gaps_dir = repo / ".meta-harness" / "gaps"
+    gaps_dir = repo / ".claude-reflect" / "gaps"
     gaps_dir.mkdir(parents=True, exist_ok=True)
     path = gaps_dir / f"{gap_id}.json"
     path.write_text(json.dumps(record, indent=2), encoding="utf-8")
@@ -61,7 +61,7 @@ def _make_gap_record(
 
 def _write_maintenance_log(repo: Path, log_entry: dict) -> None:
     """Write a maintenance log entry."""
-    log_path = repo / ".meta-harness" / "maintenance.log"
+    log_path = repo / ".claude-reflect" / "maintenance.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     # Append JSONL format
     with open(log_path, "a", encoding="utf-8") as f:
@@ -228,7 +228,7 @@ class TestStaleGapTransition:
         )
 
         # Read back the gap record
-        gap_path = tmp_path / ".meta-harness" / "gaps" / "gap-old.json"
+        gap_path = tmp_path / ".claude-reflect" / "gaps" / "gap-old.json"
         updated = json.loads(gap_path.read_text(encoding="utf-8"))
         assert updated["status"] == "stale"
 
@@ -243,7 +243,7 @@ class TestStaleGapTransition:
             current_session_count=10,
         )
 
-        gap_path = tmp_path / ".meta-harness" / "gaps" / "gap-recent.json"
+        gap_path = tmp_path / ".claude-reflect" / "gaps" / "gap-recent.json"
         updated = json.loads(gap_path.read_text(encoding="utf-8"))
         assert updated["status"] == "open"
 
@@ -258,7 +258,7 @@ class TestStaleGapTransition:
             current_session_count=65,
         )
 
-        gap_path = tmp_path / ".meta-harness" / "gaps" / "gap-stale.json"
+        gap_path = tmp_path / ".claude-reflect" / "gaps" / "gap-stale.json"
         updated = json.loads(gap_path.read_text(encoding="utf-8"))
         assert updated["status"] == "stale"
 
@@ -273,7 +273,7 @@ class TestStaleGapTransition:
             current_session_count=65,
         )
 
-        gap_path = tmp_path / ".meta-harness" / "gaps" / "gap-addr.json"
+        gap_path = tmp_path / ".claude-reflect" / "gaps" / "gap-addr.json"
         updated = json.loads(gap_path.read_text(encoding="utf-8"))
         assert updated["status"] == "addressed"
 
@@ -288,7 +288,7 @@ class TestStaleGapTransition:
             current_session_count=65,
         )
 
-        gap_path = tmp_path / ".meta-harness" / "gaps" / "gap-partial.json"
+        gap_path = tmp_path / ".claude-reflect" / "gaps" / "gap-partial.json"
         updated = json.loads(gap_path.read_text(encoding="utf-8"))
         assert updated["status"] == "partially_addressed"
 
@@ -308,8 +308,8 @@ class TestKindVocabularyReconciliation:
         reconcile_kind_vocabulary(repo=tmp_path)
 
         # Both should remain unchanged — same kind is not a problem
-        g1 = json.loads((tmp_path / ".meta-harness" / "gaps" / "gap-1.json").read_text())
-        g2 = json.loads((tmp_path / ".meta-harness" / "gaps" / "gap-2.json").read_text())
+        g1 = json.loads((tmp_path / ".claude-reflect" / "gaps" / "gap-1.json").read_text())
+        g2 = json.loads((tmp_path / ".claude-reflect" / "gaps" / "gap-2.json").read_text())
         assert g1["kind"] == "tool-call-loop"
         assert g2["kind"] == "tool-call-loop"
 
@@ -322,8 +322,8 @@ class TestKindVocabularyReconciliation:
         result = reconcile_kind_vocabulary(repo=tmp_path)
 
         # After reconciliation, both should have the same canonical label
-        g_a = json.loads((tmp_path / ".meta-harness" / "gaps" / "gap-a.json").read_text())
-        g_b = json.loads((tmp_path / ".meta-harness" / "gaps" / "gap-b.json").read_text())
+        g_a = json.loads((tmp_path / ".claude-reflect" / "gaps" / "gap-a.json").read_text())
+        g_b = json.loads((tmp_path / ".claude-reflect" / "gaps" / "gap-b.json").read_text())
         assert g_a["kind"] == g_b["kind"]
         # The result should indicate what was reconciled
         assert len(result.merged_kinds) > 0
@@ -335,8 +335,8 @@ class TestKindVocabularyReconciliation:
 
         result = reconcile_kind_vocabulary(repo=tmp_path)
 
-        g_x = json.loads((tmp_path / ".meta-harness" / "gaps" / "gap-x.json").read_text())
-        g_y = json.loads((tmp_path / ".meta-harness" / "gaps" / "gap-y.json").read_text())
+        g_x = json.loads((tmp_path / ".claude-reflect" / "gaps" / "gap-x.json").read_text())
+        g_y = json.loads((tmp_path / ".claude-reflect" / "gaps" / "gap-y.json").read_text())
         assert g_x["kind"] == "tool-call-loop"
         assert g_y["kind"] == "context-window-overflow"
         assert len(result.merged_kinds) == 0
@@ -350,8 +350,8 @@ class TestKindVocabularyReconciliation:
         result = reconcile_kind_vocabulary(repo=tmp_path)
 
         # Conservative: should NOT merge ambiguous cases
-        g_m = json.loads((tmp_path / ".meta-harness" / "gaps" / "gap-m.json").read_text())
-        g_n = json.loads((tmp_path / ".meta-harness" / "gaps" / "gap-n.json").read_text())
+        g_m = json.loads((tmp_path / ".claude-reflect" / "gaps" / "gap-m.json").read_text())
+        g_n = json.loads((tmp_path / ".claude-reflect" / "gaps" / "gap-n.json").read_text())
         assert g_m["kind"] == "file-read-retry"
         assert g_n["kind"] == "tool-retry-pattern"
 
@@ -361,7 +361,7 @@ class TestKindVocabularyReconciliation:
 
         reconcile_kind_vocabulary(repo=tmp_path)
 
-        updated = json.loads((tmp_path / ".meta-harness" / "gaps" / "gap-r.json").read_text())
+        updated = json.loads((tmp_path / ".claude-reflect" / "gaps" / "gap-r.json").read_text())
         # All fields except 'kind' should be identical
         for key in original:
             if key == "kind":
@@ -386,7 +386,7 @@ class TestMaintenanceLog:
             kinds_reconciled=["correction-required -> human-correction"],
             gaps_transitioned=["gap-old"],
         )
-        log_path = tmp_path / ".meta-harness" / "maintenance.log"
+        log_path = tmp_path / ".claude-reflect" / "maintenance.log"
         assert log_path.exists()
         content = log_path.read_text(encoding="utf-8")
         assert "pages_created" in content
@@ -399,6 +399,6 @@ class TestMaintenanceLog:
         log.record(pages_created=2, pages_updated=1, pages_deprecated=0,
                    kinds_reconciled=[], gaps_transitioned=[])
 
-        log_path = tmp_path / ".meta-harness" / "maintenance.log"
+        log_path = tmp_path / ".claude-reflect" / "maintenance.log"
         lines = log_path.read_text(encoding="utf-8").strip().splitlines()
         assert len(lines) == 2

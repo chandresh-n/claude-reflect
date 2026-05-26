@@ -18,7 +18,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
-from meta_harness.storage.session_logs import Session, ToolCall, Turn
+from claude_reflect.storage.session_logs import Session, ToolCall, Turn
 
 
 def _turn(human: str, asst: str, tools: list[str] | None = None,
@@ -48,14 +48,14 @@ def _session(sid: str, turns: list[Turn]) -> Session:
 
 
 def test_manifest_module_importable() -> None:
-    from meta_harness.agents.pipeline.manifest import (  # type: ignore  # noqa: F401
+    from claude_reflect.agents.pipeline.manifest import (  # type: ignore  # noqa: F401
         build_session_manifest,
     )
 
 
 def test_manifest_has_required_fields() -> None:
     """Downstream stages depend on a specific set of fields; this pins them."""
-    from meta_harness.agents.pipeline.manifest import (  # type: ignore
+    from claude_reflect.agents.pipeline.manifest import (  # type: ignore
         build_session_manifest,
     )
 
@@ -86,7 +86,7 @@ def test_manifest_has_required_fields() -> None:
 
 
 def test_manifest_fields_are_populated_correctly() -> None:
-    from meta_harness.agents.pipeline.manifest import (  # type: ignore
+    from claude_reflect.agents.pipeline.manifest import (  # type: ignore
         build_session_manifest,
     )
 
@@ -120,7 +120,7 @@ def test_manifest_is_deterministic_byte_identical() -> None:
 
     This is required for caching and for the manifest itself to be a stable
     cache-key component."""
-    from meta_harness.agents.pipeline.manifest import (  # type: ignore
+    from claude_reflect.agents.pipeline.manifest import (  # type: ignore
         build_session_manifest,
     )
 
@@ -139,20 +139,20 @@ def test_manifest_makes_zero_model_calls() -> None:
     """Building a manifest must NOT invoke any LLM.  The whole point is
     that it's cheap, derived from parsed JSONL.  We mock invoke_claude
     at the runner layer and assert it never fired."""
-    from meta_harness.agents.pipeline.manifest import (  # type: ignore
+    from claude_reflect.agents.pipeline.manifest import (  # type: ignore
         build_session_manifest,
     )
 
     s = _session("s-demo", [_turn("a", "b", tools=["Bash"])])
     with patch(
-        "meta_harness.agents.claude_runner.invoke_claude"
+        "claude_reflect.agents.claude_runner.invoke_claude"
     ) as mock_invoke:
         build_session_manifest(s)
         assert mock_invoke.call_count == 0
 
 
 def test_manifest_handles_empty_session() -> None:
-    from meta_harness.agents.pipeline.manifest import (  # type: ignore
+    from claude_reflect.agents.pipeline.manifest import (  # type: ignore
         build_session_manifest,
     )
 

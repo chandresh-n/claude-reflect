@@ -1,5 +1,5 @@
 """
-Proposer agent — Step 9 of the meta-harness build.
+Proposer agent — Step 9 of the claude-reflect build.
 
 Reads evaluator output and the full canonical knowledge base (gap records,
 decisions, archive entries) — NOT the summary layer for authoritative state.
@@ -27,9 +27,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from meta_harness.agents.claude_runner import ClaudeRunnerError, invoke_claude
-from meta_harness.storage.gap_record import read_gap_record, update_gap_record
-from meta_harness.storage.archive_entry import ArchiveEntryError
+from claude_reflect.agents.claude_runner import ClaudeRunnerError, invoke_claude
+from claude_reflect.storage.gap_record import read_gap_record, update_gap_record
+from claude_reflect.storage.archive_entry import ArchiveEntryError
 
 
 # ---------------------------------------------------------------------------
@@ -41,7 +41,7 @@ VALID_SURFACES = frozenset({"claude_md", "skill", "agent", "hook", "settings", "
 VALID_NOVELTY_STATUSES = frozenset({"normal", "forced_novelty", "null_baseline"})
 
 SYSTEM_PROMPT = """\
-You are the proposer agent for the meta-harness. Your role is to read the \
+You are the proposer agent for the claude-reflect. Your role is to read the \
 evaluator's report and the canonical knowledge base, then produce a batch of \
 proposal intents — specific, actionable changes to the target project's \
 Claude Code configuration.
@@ -174,7 +174,7 @@ def check_forced_novelty(
 
 def _read_gap_records(repo: Path) -> List[dict]:
     """Read all gap records from the canonical layer."""
-    gaps_dir = repo / ".meta-harness" / "gaps"
+    gaps_dir = repo / ".claude-reflect" / "gaps"
     if not gaps_dir.exists():
         return []
     records = []
@@ -188,7 +188,7 @@ def _read_gap_records(repo: Path) -> List[dict]:
 
 def _read_archive_entries(repo: Path) -> List[dict]:
     """Read all archive entries from the canonical layer."""
-    archive_dir = repo / ".meta-harness" / "archive"
+    archive_dir = repo / ".claude-reflect" / "archive"
     if not archive_dir.exists():
         return []
     entries = []
@@ -204,13 +204,13 @@ def _read_decisions(repo: Path) -> List[dict]:
     """Read recent decisions from the decisions branch via git log.
 
     Returns parsed decision records from the most recent commits on the
-    meta-harness/decisions branch.
+    claude-reflect/decisions branch.
     """
     import subprocess
 
     try:
         result = subprocess.run(
-            ["git", "log", "meta-harness/decisions", "--format=%B", "-n", "20", "--"],
+            ["git", "log", "claude-reflect/decisions", "--format=%B", "-n", "20", "--"],
             cwd=str(repo),
             capture_output=True,
             text=True,
@@ -462,7 +462,7 @@ def _parse_proposer_output(raw_text: str) -> dict:
     Tolerant of preamble prose and ```json``` fences — the model sometimes
     emits both even when the system prompt forbids markdown wrapping.
     """
-    from meta_harness.agents._json_parsing import extract_json
+    from claude_reflect.agents._json_parsing import extract_json
 
     try:
         output = extract_json(raw_text)

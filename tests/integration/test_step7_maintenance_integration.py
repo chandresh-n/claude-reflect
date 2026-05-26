@@ -25,7 +25,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from meta_harness.processes.maintenance import (
+from claude_reflect.processes.maintenance import (
     run_maintenance,
     should_trigger,
 )
@@ -36,8 +36,8 @@ from meta_harness.processes.maintenance import (
 # ---------------------------------------------------------------------------
 
 def _init_kb(repo: Path) -> None:
-    """Create a minimal .meta-harness structure for testing."""
-    mh = repo / ".meta-harness"
+    """Create a minimal .claude-reflect structure for testing."""
+    mh = repo / ".claude-reflect"
     mh.mkdir(parents=True, exist_ok=True)
     (mh / "gaps").mkdir(exist_ok=True)
     (mh / "archive").mkdir(exist_ok=True)
@@ -89,7 +89,7 @@ def _make_gap_record(repo: Path, gap_id: str, kind: str = "tool-call-loop",
         "status": status,
         "related_proposals": [],
     }
-    gap_path = repo / ".meta-harness" / "gaps" / f"{gap_id}.json"
+    gap_path = repo / ".claude-reflect" / "gaps" / f"{gap_id}.json"
     gap_path.write_text(json.dumps(record, indent=2, sort_keys=True), encoding="utf-8")
     return record
 
@@ -129,11 +129,11 @@ class TestMaintenanceIdempotence:
 
         # First run
         run_maintenance(repo=tmp_path)
-        snapshot_1 = _snapshot_tree(tmp_path / ".meta-harness")
+        snapshot_1 = _snapshot_tree(tmp_path / ".claude-reflect")
 
         # Second run (no new content)
         run_maintenance(repo=tmp_path)
-        snapshot_2 = _snapshot_tree(tmp_path / ".meta-harness")
+        snapshot_2 = _snapshot_tree(tmp_path / ".claude-reflect")
 
         assert _hash_snapshot(snapshot_1) == _hash_snapshot(snapshot_2), (
             "Second maintenance run altered state — not idempotent"
@@ -146,10 +146,10 @@ class TestMaintenanceIdempotence:
 
         # Run maintenance with nothing new
         run_maintenance(repo=tmp_path)
-        snap_1 = _snapshot_tree(tmp_path / ".meta-harness")
+        snap_1 = _snapshot_tree(tmp_path / ".claude-reflect")
 
         run_maintenance(repo=tmp_path)
-        snap_2 = _snapshot_tree(tmp_path / ".meta-harness")
+        snap_2 = _snapshot_tree(tmp_path / ".claude-reflect")
 
         assert _hash_snapshot(snap_1) == _hash_snapshot(snap_2)
 
@@ -168,7 +168,7 @@ class TestMaintenanceEndToEnd:
 
         run_maintenance(repo=tmp_path)
 
-        log_path = tmp_path / ".meta-harness" / "maintenance.log"
+        log_path = tmp_path / ".claude-reflect" / "maintenance.log"
         assert log_path.exists(), "Maintenance log not created"
         content = log_path.read_text(encoding="utf-8")
         assert len(content.strip()) > 0, "Maintenance log is empty"
@@ -180,7 +180,7 @@ class TestMaintenanceEndToEnd:
 
         run_maintenance(repo=tmp_path)
 
-        index_path = tmp_path / ".meta-harness" / "summary" / "index.md"
+        index_path = tmp_path / ".claude-reflect" / "summary" / "index.md"
         assert index_path.exists(), "Summary index not regenerated"
 
     def test_stale_gaps_transitioned_during_pass(self, tmp_path: Path) -> None:
@@ -193,7 +193,7 @@ class TestMaintenanceEndToEnd:
         run_maintenance(repo=tmp_path)
 
         gap = json.loads(
-            (tmp_path / ".meta-harness" / "gaps" / "gap-stale-e2e.json").read_text()
+            (tmp_path / ".claude-reflect" / "gaps" / "gap-stale-e2e.json").read_text()
         )
         assert gap["status"] == "stale"
 
@@ -205,13 +205,13 @@ class TestMaintenanceEndToEnd:
 
         # Snapshot non-maintenance state before
         gap_before = json.loads(
-            (tmp_path / ".meta-harness" / "gaps" / "gap-inv.json").read_text()
+            (tmp_path / ".claude-reflect" / "gaps" / "gap-inv.json").read_text()
         )
 
         run_maintenance(repo=tmp_path)
 
         gap_after = json.loads(
-            (tmp_path / ".meta-harness" / "gaps" / "gap-inv.json").read_text()
+            (tmp_path / ".claude-reflect" / "gaps" / "gap-inv.json").read_text()
         )
         # characterization, first_observed_at, evidence etc. must be unchanged
         for field in ("identifier", "characterization", "first_observed_at",
@@ -228,7 +228,7 @@ class TestMaintenanceEndToEnd:
         # First run to create pages
         run_maintenance(repo=tmp_path)
         files_before = set()
-        mh = tmp_path / ".meta-harness"
+        mh = tmp_path / ".claude-reflect"
         for p in mh.rglob("*"):
             if p.is_file():
                 files_before.add(str(p.relative_to(mh)))

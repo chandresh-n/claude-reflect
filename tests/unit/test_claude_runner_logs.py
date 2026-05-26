@@ -16,8 +16,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from meta_harness.agents import claude_runner as cr
-from meta_harness.agents.claude_runner import (
+from claude_reflect.agents import claude_runner as cr
+from claude_reflect.agents.claude_runner import (
     ClaudeRunnerError,
     invoke_claude,
 )
@@ -59,12 +59,12 @@ def _select_ready(rlist, wlist, xlist, timeout=None):
 
 
 _patch_select = patch(
-    "meta_harness.agents.claude_runner.select.select", _select_ready
+    "claude_reflect.agents.claude_runner.select.select", _select_ready
 )
 
 
 @_patch_select
-@patch("meta_harness.agents.claude_runner.subprocess.Popen")
+@patch("claude_reflect.agents.claude_runner.subprocess.Popen")
 def test_stream_jsonl_written_when_log_dir_passed(
     mock_popen: MagicMock, tmp_path: Path
 ) -> None:
@@ -108,7 +108,7 @@ def test_stream_jsonl_written_when_log_dir_passed(
 
 
 @_patch_select
-@patch("meta_harness.agents.claude_runner.subprocess.Popen")
+@patch("claude_reflect.agents.claude_runner.subprocess.Popen")
 def test_no_log_files_when_log_dir_not_passed(
     mock_popen: MagicMock, tmp_path: Path
 ) -> None:
@@ -124,7 +124,7 @@ def test_no_log_files_when_log_dir_not_passed(
 
 
 @_patch_select
-@patch("meta_harness.agents.claude_runner.subprocess.Popen")
+@patch("claude_reflect.agents.claude_runner.subprocess.Popen")
 def test_retry_attempts_append_to_same_stream_jsonl(
     mock_popen: MagicMock, tmp_path: Path
 ) -> None:
@@ -162,7 +162,7 @@ def test_retry_attempts_append_to_same_stream_jsonl(
 
 
 @_patch_select
-@patch("meta_harness.agents.claude_runner.subprocess.Popen")
+@patch("claude_reflect.agents.claude_runner.subprocess.Popen")
 def test_stream_jsonl_records_hard_error_outcome(
     mock_popen: MagicMock, tmp_path: Path
 ) -> None:

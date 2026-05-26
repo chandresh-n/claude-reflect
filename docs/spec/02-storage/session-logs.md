@@ -4,7 +4,7 @@
 
 Session logs are Claude Code's native record of each session: every tool
 call, every turn, every token count, every compaction event. The
-meta-harness reads them as ground truth. It never modifies them.
+claude-reflect reads them as ground truth. It never modifies them.
 
 ## Inputs
 
@@ -24,7 +24,7 @@ Read by:
 ## Content
 
 Each session is a JSONL file. The format is defined by Claude Code, not by
-this spec. Relevant fields the meta-harness consumes:
+this spec. Relevant fields the claude-reflect consumes:
 
 - Session identifier.
 - Timestamps (session start, session end, per-turn timestamps).
@@ -37,10 +37,10 @@ this spec. Relevant fields the meta-harness consumes:
   - Compaction events.
 - Any context injection events.
 
-The meta-harness does not depend on an exhaustive field list; consumers
+The claude-reflect does not depend on an exhaustive field list; consumers
 (especially the evaluator) read the JSONL and extract what they need.
 Format drift in Claude Code's logs may require the evaluator's behavioral
-spec to be updated, but the schema of what the meta-harness produces does
+spec to be updated, but the schema of what the claude-reflect produces does
 not change.
 
 ## Session resolution
@@ -53,12 +53,12 @@ and are passed to the evaluator.
 
 ## Invariants
 
-- The meta-harness never writes to or deletes session logs.
+- The claude-reflect never writes to or deletes session logs.
 - Every session identifier referenced in gap records, decision records,
   or evaluator output resolves to an existing session log file.
 - If a session log file is deleted out-of-band (e.g., Claude Code's
   cleanup), references to it become dangling. This is a degraded state
-  and the spec does not require the meta-harness to recover from it; the
+  and the spec does not require the claude-reflect to recover from it; the
   human can rebuild affected summary layer pages if needed.
 
 ## Explicitly excluded

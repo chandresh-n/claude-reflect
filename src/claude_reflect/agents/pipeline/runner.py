@@ -11,7 +11,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Optional
 
-from meta_harness.agents import claude_runner
+from claude_reflect.agents import claude_runner
 
 
 class Runner(ABC):

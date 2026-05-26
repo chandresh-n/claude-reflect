@@ -1,11 +1,11 @@
 """
-CLI and skill wrapper — Step 12 of the meta-harness build.
+CLI and skill wrapper — Step 12 of the claude-reflect build.
 
 Spec refs:
   - docs/spec/05-interfaces/skill-invocation.md
   - docs/spec/05-interfaces/human-review.md
 
-Provides the ``meta-harness`` CLI entry point with three subcommands:
+Provides the ``claude-reflect`` CLI entry point with three subcommands:
   review      — trigger a reflective pass over recent sessions
   status      — report knowledge-base state
   maintenance — trigger a maintenance pass
@@ -27,13 +27,13 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
-from meta_harness.storage.knowledge_base import setup as kb_setup
-from meta_harness.storage.session_logs import SessionLogReader
-from meta_harness.agents.evaluator import evaluate, EvaluatorError
-from meta_harness.agents.proposer import propose, ProposerError
-from meta_harness.agents.author import author as author_agent, AuthorError
-from meta_harness.agents.claude_runner import ClaudeRunnerError
-from meta_harness.processes.run_loop import RunLoop, RunState, RunLoopError
+from claude_reflect.storage.knowledge_base import setup as kb_setup
+from claude_reflect.storage.session_logs import SessionLogReader
+from claude_reflect.agents.evaluator import evaluate, EvaluatorError
+from claude_reflect.agents.proposer import propose, ProposerError
+from claude_reflect.agents.author import author as author_agent, AuthorError
+from claude_reflect.agents.claude_runner import ClaudeRunnerError
+from claude_reflect.processes.run_loop import RunLoop, RunState, RunLoopError
 
 
 # ---------------------------------------------------------------------------
@@ -58,7 +58,7 @@ def render_proposal_batch_markdown(
     end = date_range.get("end", "unknown")
     now = datetime.now(timezone.utc).isoformat()
 
-    lines.append("# Meta-harness proposal batch")
+    lines.append("# Claude-reflect proposal batch")
     lines.append("")
     lines.append(f"Run: {run_id}")
     lines.append(f"Window: {start} to {end}")
@@ -151,7 +151,7 @@ def render_proposal_batch_markdown(
 def build_parser() -> argparse.ArgumentParser:
     """Build the CLI argument parser with review/status/maintenance subcommands."""
     parser = argparse.ArgumentParser(
-        prog="meta-harness",
+        prog="claude-reflect",
         description="Reflective pass over Claude Code session logs.",
     )
     sub = parser.add_subparsers(dest="subcommand")
@@ -232,7 +232,7 @@ class ReviewCommand:
     def execute(self) -> dict:
         """Run the review pass and return a result dict."""
         # Phase 1: auto-setup on fresh repo
-        kb_dir = self.repo / ".meta-harness"
+        kb_dir = self.repo / ".claude-reflect"
         if not kb_dir.is_dir():
             self._log("Initializing knowledge base (Phase 1)...")
             kb_setup(self.repo)
@@ -240,7 +240,7 @@ class ReviewCommand:
         # If resuming, validate the run exists
         if self.resume_run_id:
             run_path = (
-                self.repo / ".meta-harness" / "runs" / f"{self.resume_run_id}.json"
+                self.repo / ".claude-reflect" / "runs" / f"{self.resume_run_id}.json"
             )
             if not run_path.exists():
                 raise RunLoopError(
@@ -323,7 +323,7 @@ class ReviewCommand:
                 self._log(f"Evaluator error: {e}")
                 self._log(
                     "Partial batch results were saved under "
-                    ".meta-harness/eval-cache/<hash>/; re-run the same "
+                    ".claude-reflect/eval-cache/<hash>/; re-run the same "
                     "review command to retry only the failed batches."
                 )
                 return _empty_eval
@@ -423,7 +423,7 @@ class StatusCommand:
 
     def execute(self) -> dict:
         """Return a dict describing the KB state."""
-        kb_dir = self.repo / ".meta-harness"
+        kb_dir = self.repo / ".claude-reflect"
         if not kb_dir.is_dir():
             return {"initialized": False}
 
@@ -461,9 +461,9 @@ class MaintenanceCommand:
 
     def execute(self) -> dict:
         """Run maintenance and return a result dict."""
-        from meta_harness.processes.maintenance import run_maintenance
+        from claude_reflect.processes.maintenance import run_maintenance
 
-        kb_dir = self.repo / ".meta-harness"
+        kb_dir = self.repo / ".claude-reflect"
         if not kb_dir.is_dir():
             return {"ran": False, "reason": "not_initialized"}
 
@@ -554,8 +554,8 @@ def _parse_date_range(raw: str) -> dict:
 
 
 def _load_config(repo: Path) -> dict:
-    """Load the meta-harness config.yaml, returning defaults if missing."""
-    config_path = repo / ".meta-harness" / "config.yaml"
+    """Load the claude-reflect config.yaml, returning defaults if missing."""
+    config_path = repo / ".claude-reflect" / "config.yaml"
     if config_path.exists():
         return yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     return {}
@@ -889,7 +889,7 @@ def _human_review_via_markdown(
         what = proposal.get("what", {})
         diff_ref = what.get("diff_reference")
         if diff_ref and not proposal.get("_author_failed"):
-            branch = f"meta-harness/proposal/{pid}"
+            branch = f"claude-reflect/proposal/{pid}"
             print(f"\n--- Diff for proposal {pid}: {proposal.get('title', '')} ---", file=sys.stderr, flush=True)
             try:
                 result = subprocess.run(
@@ -906,7 +906,7 @@ def _human_review_via_markdown(
                 print("  (could not show diff)", file=sys.stderr, flush=True)
 
     # Write markdown to a temp file and let the human edit it
-    batch_dir = repo / ".meta-harness" / "runs"
+    batch_dir = repo / ".claude-reflect" / "runs"
     batch_dir.mkdir(parents=True, exist_ok=True)
     batch_path = batch_dir / f"{run_id}-batch.md"
     batch_path.write_text(md_content, encoding="utf-8")

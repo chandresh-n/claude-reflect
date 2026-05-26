@@ -2,11 +2,11 @@
 
 ## Role
 
-The meta-harness is exposed as a Claude Code skill. The human invokes
+The claude-reflect is exposed as a Claude Code skill. The human invokes
 this skill when they want a reflective pass over recent sessions. The
 skill is the orchestrator of the run loop (see
 `04-processes/run-loop.md`) and the primary interface between the
-human and the meta-harness.
+human and the claude-reflect.
 
 The skill handles all setup transparently. First-time invocation in a
 repository triggers the environment setup (Phase 1) silently.
@@ -33,7 +33,7 @@ If the skill is invoked without a date range, it prompts for one.
 ## Invocation
 
 The skill is invoked by Claude Code's standard skill mechanism (e.g.,
-`/meta-harness review` or equivalent). The specific command name and
+`/claude-reflect review` or equivalent). The specific command name and
 mechanism are implementation choices. The spec requires only:
 
 - The skill is discoverable via Claude Code's skill list.
@@ -72,7 +72,7 @@ implementation choice).
 ## Invariants
 
 - The skill never modifies the repository outside the
-  meta-harness's designated scope (the knowledge base directory and
+  claude-reflect's designated scope (the knowledge base directory and
   the active configuration files).
 - The skill reads no external resources (no network access).
 - The skill produces no output that requires the human to use any

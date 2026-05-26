@@ -15,7 +15,7 @@ Pins (HARD — from docs/PLAN.md Step 14):
     shapes match the spec exactly
   - 25-turn windows with 5-turn overlap dedup to exactly one
     observation per turn across the boundary (no duplicates, no gaps)
-  - cache lives under .meta-harness/eval-cache/stage-1b/ and the key
+  - cache lives under .claude-reflect/eval-cache/stage-1b/ and the key
     cascades: changing an upstream stage 1a description invalidates
     the stage 1b cache for any window that included it
   - one window's runner failure does not poison other windows'
@@ -157,7 +157,7 @@ def _scan_for_forbidden_scalar_keys(obj: Any) -> list[str]:
 
 
 def test_stage_1b_module_importable() -> None:
-    from meta_harness.agents.pipeline.stage_1b import (  # type: ignore  # noqa: F401
+    from claude_reflect.agents.pipeline.stage_1b import (  # type: ignore  # noqa: F401
         observe_window,
         observe_session_windows,
     )
@@ -166,7 +166,7 @@ def test_stage_1b_module_importable() -> None:
 def test_stage_1b_exposes_prompt_version() -> None:
     """The cache key depends on a stage-local prompt_version constant
     so that bumping the prompt invalidates only this stage's cache."""
-    from meta_harness.agents.pipeline import stage_1b  # type: ignore
+    from claude_reflect.agents.pipeline import stage_1b  # type: ignore
 
     assert hasattr(stage_1b, "STAGE_1B_PROMPT_VERSION")
     assert isinstance(stage_1b.STAGE_1B_PROMPT_VERSION, str)
@@ -181,7 +181,7 @@ def test_stage_1b_exposes_prompt_version() -> None:
 def test_observe_window_returns_per_turn_observations_with_spec_schema(
     tmp_path: Path,
 ) -> None:
-    from meta_harness.agents.pipeline.stage_1b import observe_window  # type: ignore
+    from claude_reflect.agents.pipeline.stage_1b import observe_window  # type: ignore
 
     descs = [_stage_1a_description("s1", i) for i in range(3)]
     runner = MagicMock()
@@ -218,7 +218,7 @@ def test_observe_window_returns_per_turn_observations_with_spec_schema(
 def test_observe_window_returns_draft_pass_classifications_with_spec_schema(
     tmp_path: Path,
 ) -> None:
-    from meta_harness.agents.pipeline.stage_1b import observe_window  # type: ignore
+    from claude_reflect.agents.pipeline.stage_1b import observe_window  # type: ignore
 
     descs = [_stage_1a_description("s1", i) for i in range(3)]
     runner = MagicMock()
@@ -261,7 +261,7 @@ def test_observe_window_returns_draft_pass_classifications_with_spec_schema(
 def test_observe_window_no_scalar_grades_in_output(tmp_path: Path) -> None:
     """Spec is explicit: no scalar quality / confidence / priority anywhere
     in the evaluator output. Stage 1b must not introduce them."""
-    from meta_harness.agents.pipeline.stage_1b import observe_window  # type: ignore
+    from claude_reflect.agents.pipeline.stage_1b import observe_window  # type: ignore
 
     descs = [_stage_1a_description("s1", i) for i in range(2)]
     runner = MagicMock()
@@ -289,7 +289,7 @@ def test_observe_session_windows_dedups_overlap_to_one_observation_per_turn(
     (turns 0-24 and turns 20-44), the 5-turn boundary (turns 20-24)
     appears in both. After dedup, every turn 0-44 must appear in
     per_turn_observations EXACTLY once."""
-    from meta_harness.agents.pipeline.stage_1b import observe_session_windows  # type: ignore
+    from claude_reflect.agents.pipeline.stage_1b import observe_session_windows  # type: ignore
 
     descs = [_stage_1a_description("s1", i) for i in range(45)]
 
@@ -335,9 +335,9 @@ def test_observe_window_writes_cache_under_stage_1b_namespace(
     tmp_path: Path,
 ) -> None:
     """Cache files for stage 1b MUST land under
-    .meta-harness/eval-cache/stage-1b/. Downstream tooling and the
+    .claude-reflect/eval-cache/stage-1b/. Downstream tooling and the
     resume path depend on this layout."""
-    from meta_harness.agents.pipeline.stage_1b import observe_window  # type: ignore
+    from claude_reflect.agents.pipeline.stage_1b import observe_window  # type: ignore
 
     descs = [_stage_1a_description("s1", i) for i in range(2)]
     runner = MagicMock()
@@ -348,7 +348,7 @@ def test_observe_window_writes_cache_under_stage_1b_namespace(
         runner=runner, repo=tmp_path, model="m",
     )
 
-    cache_dir = tmp_path / ".meta-harness" / "eval-cache" / "stage-1b"
+    cache_dir = tmp_path / ".claude-reflect" / "eval-cache" / "stage-1b"
     assert cache_dir.is_dir(), (
         f"Expected stage 1b cache dir at {cache_dir}"
     )
@@ -362,7 +362,7 @@ def test_observe_window_writes_cache_under_stage_1b_namespace(
 def test_observe_window_cache_hit_skips_runner_on_rerun(
     tmp_path: Path,
 ) -> None:
-    from meta_harness.agents.pipeline.stage_1b import observe_window  # type: ignore
+    from claude_reflect.agents.pipeline.stage_1b import observe_window  # type: ignore
 
     descs = [_stage_1a_description("s1", i) for i in range(2)]
     runner = MagicMock()
@@ -391,7 +391,7 @@ def test_observe_window_cache_invalidates_when_upstream_description_changes(
     upstream stage 1a descriptions (or their digest). When one of those
     descriptions changes, the key must shift, the cache must miss, and
     the runner must be invoked again."""
-    from meta_harness.agents.pipeline.stage_1b import observe_window  # type: ignore
+    from claude_reflect.agents.pipeline.stage_1b import observe_window  # type: ignore
 
     descs = [_stage_1a_description("s1", i) for i in range(2)]
     runner = MagicMock()
@@ -428,7 +428,7 @@ def test_observe_session_windows_one_window_failure_does_not_drop_others(
     """One window's runner failure must NOT prevent other windows'
     observations from landing in the output. This is the partial-with-
     flag failure policy at the per-window granularity."""
-    from meta_harness.agents.pipeline.stage_1b import observe_session_windows  # type: ignore
+    from claude_reflect.agents.pipeline.stage_1b import observe_session_windows  # type: ignore
 
     descs = [_stage_1a_description("s1", i) for i in range(45)]
 
@@ -474,7 +474,7 @@ def test_observe_session_windows_surfaces_partial_completion_on_failure(
     can propagate onto the session narrative. The signal can be a top-
     level ``partial_completion`` boolean (preferred) or an equivalent
     flag the orchestrator can inspect."""
-    from meta_harness.agents.pipeline.stage_1b import observe_session_windows  # type: ignore
+    from claude_reflect.agents.pipeline.stage_1b import observe_session_windows  # type: ignore
 
     descs = [_stage_1a_description("s1", i) for i in range(45)]
 

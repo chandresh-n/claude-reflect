@@ -1,5 +1,5 @@
 """
-Maintenance process — Step 7 of the meta-harness build.
+Maintenance process — Step 7 of the claude-reflect build.
 
 Spec ref: docs/spec/04-processes/maintenance.md
 
@@ -21,7 +21,7 @@ from typing import Any
 
 import yaml
 
-from meta_harness.storage.summary_layer import (
+from claude_reflect.storage.summary_layer import (
     PageKind,
     get_summary_dir,
     write_page,
@@ -82,7 +82,7 @@ def transition_stale_gaps(
 
     Returns list of gap IDs that were transitioned.
     """
-    gaps_dir = repo / ".meta-harness" / "gaps"
+    gaps_dir = repo / ".claude-reflect" / "gaps"
     if not gaps_dir.exists():
         return []
 
@@ -138,7 +138,7 @@ def reconcile_kind_vocabulary(*, repo: Path) -> ReconciliationResult:
 
     Returns a ReconciliationResult with details of what was merged.
     """
-    gaps_dir = repo / ".meta-harness" / "gaps"
+    gaps_dir = repo / ".claude-reflect" / "gaps"
     if not gaps_dir.exists():
         return ReconciliationResult()
 
@@ -184,7 +184,7 @@ class MaintenanceLog:
 
     def __init__(self, repo: Path) -> None:
         self._repo = repo
-        self._log_path = repo / ".meta-harness" / "maintenance.log"
+        self._log_path = repo / ".claude-reflect" / "maintenance.log"
 
     def record(
         self,
@@ -310,7 +310,7 @@ def _generate_exploration_profile(
 
 def _load_all_gaps(repo: Path) -> list[dict]:
     """Load all gap records from disk."""
-    gaps_dir = repo / ".meta-harness" / "gaps"
+    gaps_dir = repo / ".claude-reflect" / "gaps"
     if not gaps_dir.exists():
         return []
     gaps = []
@@ -321,7 +321,7 @@ def _load_all_gaps(repo: Path) -> list[dict]:
 
 def _load_config(repo: Path) -> dict:
     """Load maintenance config from config.yaml."""
-    config_path = repo / ".meta-harness" / "config.yaml"
+    config_path = repo / ".claude-reflect" / "config.yaml"
     if config_path.exists():
         return yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     return {}
@@ -331,12 +331,12 @@ def _snapshot_summary_and_gaps(repo: Path) -> dict[str, bytes]:
     """Capture summary dir and gaps dir content for idempotence check."""
     snapshot: dict[str, bytes] = {}
     for subdir in ("summary", "gaps"):
-        d = repo / ".meta-harness" / subdir
+        d = repo / ".claude-reflect" / subdir
         if not d.exists():
             continue
         for p in sorted(d.rglob("*")):
             if p.is_file():
-                rel = str(p.relative_to(repo / ".meta-harness"))
+                rel = str(p.relative_to(repo / ".claude-reflect"))
                 snapshot[rel] = p.read_bytes()
     return snapshot
 
@@ -365,7 +365,7 @@ def run_maintenance(*, repo: Path) -> None:
     state. Achieves this by snapshotting before/after and skipping the
     log entry when nothing changed.
     """
-    mh = repo / ".meta-harness"
+    mh = repo / ".claude-reflect"
     if not mh.exists():
         return
 

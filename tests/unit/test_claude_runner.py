@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch, PropertyMock
 
 import pytest
 
-from meta_harness.agents.claude_runner import ClaudeRunnerError, invoke_claude
+from claude_reflect.agents.claude_runner import ClaudeRunnerError, invoke_claude
 
 
 class _MockStdout:
@@ -89,12 +89,12 @@ def _mock_select_ready(rlist, wlist, xlist, timeout=None):
 
 # Apply select mock to all Popen-based tests via a stacked decorator pattern
 _patch_select = patch(
-    "meta_harness.agents.claude_runner.select.select", _mock_select_ready
+    "claude_reflect.agents.claude_runner.select.select", _mock_select_ready
 )
 
 
 @_patch_select
-@patch("meta_harness.agents.claude_runner.subprocess.Popen")
+@patch("claude_reflect.agents.claude_runner.subprocess.Popen")
 def test_invoke_claude_returns_text(mock_popen: MagicMock) -> None:
     """Mocks Popen to return valid stream-json; asserts helper returns result text."""
     mock_popen.return_value = _make_mock_popen("hello")
@@ -107,7 +107,7 @@ def test_invoke_claude_returns_text(mock_popen: MagicMock) -> None:
 
 
 @_patch_select
-@patch("meta_harness.agents.claude_runner.subprocess.Popen")
+@patch("claude_reflect.agents.claude_runner.subprocess.Popen")
 def test_env_strips_api_key(mock_popen: MagicMock) -> None:
     """Asserts ANTHROPIC_API_KEY is NOT in the env dict passed to Popen."""
     mock_popen.return_value = _make_mock_popen("ok")
@@ -121,7 +121,7 @@ def test_env_strips_api_key(mock_popen: MagicMock) -> None:
 
 
 @_patch_select
-@patch("meta_harness.agents.claude_runner.subprocess.Popen")
+@patch("claude_reflect.agents.claude_runner.subprocess.Popen")
 def test_error_handling(mock_popen: MagicMock) -> None:
     """Asserts ClaudeRunnerError is raised when is_error is true."""
     mock_popen.return_value = _make_mock_popen(
@@ -132,7 +132,7 @@ def test_error_handling(mock_popen: MagicMock) -> None:
 
 
 @_patch_select
-@patch("meta_harness.agents.claude_runner.subprocess.Popen")
+@patch("claude_reflect.agents.claude_runner.subprocess.Popen")
 def test_nonzero_exit_raises(mock_popen: MagicMock) -> None:
     """Asserts ClaudeRunnerError is raised on non-zero exit with no result event."""
     mock_proc = MagicMock()
@@ -148,7 +148,7 @@ def test_nonzero_exit_raises(mock_popen: MagicMock) -> None:
 
 
 @_patch_select
-@patch("meta_harness.agents.claude_runner.subprocess.Popen")
+@patch("claude_reflect.agents.claude_runner.subprocess.Popen")
 def test_nonzero_exit_extracts_error_from_result_event(mock_popen: MagicMock) -> None:
     """When exit code is 1 but stream has a result event with is_error, extract it."""
     mock_popen.return_value = _make_mock_popen(
@@ -159,7 +159,7 @@ def test_nonzero_exit_extracts_error_from_result_event(mock_popen: MagicMock) ->
 
 
 @_patch_select
-@patch("meta_harness.agents.claude_runner.subprocess.Popen")
+@patch("claude_reflect.agents.claude_runner.subprocess.Popen")
 def test_system_prompt_written_to_tempfile(mock_popen: MagicMock) -> None:
     """Asserts --system-prompt-file flag points to a file with the system prompt."""
     system_prompt_text = "You are an expert reviewer."
@@ -179,7 +179,7 @@ def test_system_prompt_written_to_tempfile(mock_popen: MagicMock) -> None:
 
 
 @_patch_select
-@patch("meta_harness.agents.claude_runner.subprocess.Popen")
+@patch("claude_reflect.agents.claude_runner.subprocess.Popen")
 def test_model_passed_through(mock_popen: MagicMock) -> None:
     """Asserts --model flag matches the passed model arg."""
     mock_popen.return_value = _make_mock_popen("ok")
@@ -192,7 +192,7 @@ def test_model_passed_through(mock_popen: MagicMock) -> None:
 
 
 @_patch_select
-@patch("meta_harness.agents.claude_runner.subprocess.Popen")
+@patch("claude_reflect.agents.claude_runner.subprocess.Popen")
 def test_isolation_flags_passed_to_claude(mock_popen: MagicMock) -> None:
     """RCA fix: --strict-mcp-config + --disable-slash-commands must always
     be passed, and Popen.cwd must be a tempdir (not the project dir).
@@ -225,7 +225,7 @@ def test_isolation_flags_passed_to_claude(mock_popen: MagicMock) -> None:
 
 
 @_patch_select
-@patch("meta_harness.agents.claude_runner.subprocess.Popen")
+@patch("claude_reflect.agents.claude_runner.subprocess.Popen")
 def test_progress_output(mock_popen: MagicMock, capsys) -> None:
     """Asserts progress is printed to stderr during streaming."""
     mock_popen.return_value = _make_mock_popen_with_progress("result", output_tokens=50)
@@ -243,13 +243,13 @@ def test_progress_output(mock_popen: MagicMock, capsys) -> None:
 
 
 @_patch_select
-@patch("meta_harness.agents.claude_runner.subprocess.Popen")
+@patch("claude_reflect.agents.claude_runner.subprocess.Popen")
 def test_author_uses_runner(mock_popen: MagicMock) -> None:
     """Verify author() delegates to invoke_claude instead of anthropic SDK."""
     from pathlib import Path
     import tempfile
 
-    from meta_harness.agents.author import author
+    from claude_reflect.agents.author import author
 
     canned_author_json = json.dumps({
         "status": "success",
@@ -284,7 +284,7 @@ def test_author_uses_runner(mock_popen: MagicMock) -> None:
     assert result["status"] == "success"
     assert result["proposal_id"] == "prop-001"
     assert result["files_touched"] == ["skills/test-skill.md"]
-    assert result["branch_name"] == "meta-harness/proposal/prop-001"
+    assert result["branch_name"] == "claude-reflect/proposal/prop-001"
     assert result["diff_reference"] == "no-commit"
 
     # Verify Popen was called (via invoke_claude)
@@ -302,7 +302,7 @@ def test_evaluator_does_not_import_anthropic() -> None:
     import importlib
     import inspect
 
-    evaluator_mod = importlib.import_module("meta_harness.agents.evaluator")
+    evaluator_mod = importlib.import_module("claude_reflect.agents.evaluator")
     source = inspect.getsource(evaluator_mod)
     assert "import anthropic" not in source, (
         "evaluator.py must not import anthropic directly"
@@ -314,13 +314,13 @@ def test_evaluator_does_not_import_anthropic() -> None:
 # ---------------------------------------------------------------------------
 
 
-@patch("meta_harness.agents.proposer.invoke_claude")
+@patch("claude_reflect.agents.proposer.invoke_claude")
 def test_proposer_uses_runner(mock_invoke: MagicMock, tmp_path: Path) -> None:
     """Proposer's propose() must call invoke_claude instead of anthropic SDK directly."""
     import importlib
     import inspect
 
-    from meta_harness.agents.proposer import propose
+    from claude_reflect.agents.proposer import propose
 
     # Canned proposer JSON that invoke_claude will return
     canned_batch = {
@@ -398,7 +398,7 @@ def test_proposer_uses_runner(mock_invoke: MagicMock, tmp_path: Path) -> None:
     assert result["proposals"][0]["proposal_id"] == "prop-test-001"
 
     # Assert anthropic is NOT imported at runtime in proposer module
-    proposer_mod = importlib.import_module("meta_harness.agents.proposer")
+    proposer_mod = importlib.import_module("claude_reflect.agents.proposer")
     source = inspect.getsource(proposer_mod)
     assert "import anthropic" not in source, (
         "proposer.py must not import anthropic directly"
@@ -415,7 +415,7 @@ def test_no_anthropic_import() -> None:
     import ast
     from pathlib import Path
 
-    agent_dir = Path(__file__).resolve().parents[2] / "src" / "meta_harness" / "agents"
+    agent_dir = Path(__file__).resolve().parents[2] / "src" / "claude_reflect" / "agents"
     agent_files = sorted(agent_dir.glob("*.py"))
     assert agent_files, f"No .py files found in {agent_dir}"
 

@@ -1,12 +1,12 @@
 # `src/` — Implementation
 
-This is the earmarked folder for the meta-harness Python package. Claude Code
-should put all implementation code under `src/meta_harness/`.
+This is the earmarked folder for the claude-reflect Python package. Claude Code
+should put all implementation code under `src/claude_reflect/`.
 
 ## What lives here
 
-The meta-harness ships as a pip-installable Python package with a CLI
-(`meta-harness`). Per `docs/IMPLEMENTATION.md`:
+The claude-reflect ships as a pip-installable Python package with a CLI
+(`claude-reflect`). Per `docs/IMPLEMENTATION.md`:
 
 - **Python** for orchestration, agent invocation, knowledge-base mutations
   with transactional semantics, and any cross-component coordination.
@@ -21,10 +21,10 @@ The spec does not prescribe file-level Python layout. A reasonable starting
 shape, derived from `docs/spec/` and `docs/IMPLEMENTATION.md`:
 
 ```
-src/meta_harness/
+src/claude_reflect/
 ├── __init__.py
-├── cli.py                       # `meta-harness` entry point (review, status, maintenance, fixtures)
-├── config.py                    # load/validate .meta-harness/config.yaml
+├── cli.py                       # `claude-reflect` entry point (review, status, maintenance, fixtures)
+├── config.py                    # load/validate .claude-reflect/config.yaml
 ├── records/                     # JSON read/write for canonical records
 │   ├── gap_record.py            # spec: docs/spec/01-data-structures/gap-record.md
 │   ├── decision_record.py       # spec: docs/spec/01-data-structures/decision-record.md
@@ -47,7 +47,7 @@ src/meta_harness/
 │   ├── skill_invocation.py      # spec: docs/spec/05-interfaces/skill-invocation.md
 │   └── human_review.py          # spec: docs/spec/05-interfaces/human-review.md
 └── fixtures/
-    └── generator.py             # `meta-harness fixtures generate` (synthetic JSONL session logs)
+    └── generator.py             # `claude-reflect fixtures generate` (synthetic JSONL session logs)
 ```
 
 ## Implementation order
