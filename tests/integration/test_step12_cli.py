@@ -28,6 +28,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from claude_reflect.agents.claude_runner import ClaudeRunnerError
 from claude_reflect.cli import main, build_parser, ReviewCommand, StatusCommand, MaintenanceCommand
 
 
@@ -277,6 +278,98 @@ class TestResumeFlag:
 # ---------------------------------------------------------------------------
 # 3. --verbose adds streamed output and tool-call traces
 # ---------------------------------------------------------------------------
+
+
+class TestStageErrorSurfacing:
+    """Stage failures must show up in the final result instead of looking
+    like a clean 'complete, 0 decisions' run.
+
+    Regression guard for the bug where a transient evaluator/proposer
+    failure produced an empty result that callers could not tell apart
+    from a legitimately-empty review pass.
+    """
+
+    def test_evaluator_failure_marks_result_complete_with_errors(
+        self, tmp_path: Path,
+    ) -> None:
+        """When the evaluator raises ClaudeRunnerError, the run must:
+          - complete (no exception propagated to the caller),
+          - return status='complete_with_errors' (not 'complete'),
+          - include the failure in result['errors'].
+        """
+        _init_git_repo(tmp_path)
+        _setup_kb(tmp_path)
+
+        cmd = ReviewCommand(
+            repo=tmp_path, date_range="last 7 days", verbose=False,
+        )
+
+        # Force the imported evaluate symbol to raise. The wrapper in
+        # ReviewCommand catches it, records the error, and returns empty
+        # output — the run loop continues to completion.
+        with patch("claude_reflect.cli.evaluate") as mock_eval, \
+             patch.object(cmd, "_make_run_loop") as mock_make:
+            mock_eval.side_effect = ClaudeRunnerError(
+                "simulated socket connection closed"
+            )
+
+            def fake_run():
+                # Invoke the real_evaluator wrapper exactly the way the run
+                # loop would, so its except branch runs and populates
+                # self._stage_errors.
+                cmd._real_evaluator(sessions=[MagicMock()], repo=tmp_path)
+                state = MagicMock()
+                state.status = "complete"
+                state.decisions = []
+                state.run_id = "run-eval-fail"
+                state.proposal_batch = {"proposals": []}
+                return state
+
+            mock_loop = MagicMock()
+            mock_loop.run.side_effect = fake_run
+            mock_make.return_value = mock_loop
+
+            result = cmd.execute()
+
+        assert result["status"] == "complete_with_errors", (
+            f"Expected status='complete_with_errors' when a stage raised; "
+            f"got {result['status']!r}. Full result: {result!r}"
+        )
+        assert "errors" in result and result["errors"], (
+            "result must include a non-empty 'errors' list when stages failed"
+        )
+        assert any("evaluator" in e.lower() for e in result["errors"]), (
+            f"the evaluator error must be in 'errors'; got {result['errors']!r}"
+        )
+
+    def test_clean_run_keeps_complete_status(self, tmp_path: Path) -> None:
+        """The complete_with_errors signalling must NOT fire on a clean run."""
+        _init_git_repo(tmp_path)
+        _setup_kb(tmp_path)
+
+        cmd = ReviewCommand(
+            repo=tmp_path, date_range="last 7 days", verbose=False,
+        )
+
+        with patch.object(cmd, "_make_run_loop") as mock_make:
+            state = MagicMock()
+            state.status = "complete"
+            state.decisions = []
+            state.run_id = "run-clean"
+            state.proposal_batch = {"proposals": []}
+            mock_loop = MagicMock()
+            mock_loop.run.return_value = state
+            mock_make.return_value = mock_loop
+
+            result = cmd.execute()
+
+        assert result["status"] == "complete", (
+            f"A run with no stage errors must keep status='complete'; "
+            f"got {result['status']!r}"
+        )
+        assert "errors" not in result, (
+            "result must NOT include an 'errors' key on a clean run"
+        )
 
 
 class TestVerboseFlag:

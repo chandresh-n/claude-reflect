@@ -15,7 +15,65 @@ from unittest.mock import MagicMock, patch, PropertyMock
 
 import pytest
 
-from claude_reflect.agents.claude_runner import ClaudeRunnerError, invoke_claude
+from claude_reflect.agents.claude_runner import (
+    ClaudeRunnerError,
+    invoke_claude,
+    _is_retryable_error,
+)
+
+
+# ---------------------------------------------------------------------------
+# Retry classifier: transport-layer errors must be retried
+#
+# Regression guard for the bug where a single transient `claude -p` socket
+# close took down the whole evaluator pipeline. The retry loop, backoff, and
+# per-call cache were all fine; _is_retryable_error simply did not classify
+# the error as retryable, so it raised straight through.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("message", [
+    # Original Anthropic API server-side overload set (regression guard)
+    "Overloaded",
+    "rate_limit exceeded",
+    "HTTP 429 Too Many Requests",
+    "503 Service Unavailable",
+    "529: server overloaded",
+    "internal_server_error",
+    "Bad Gateway",
+    "Gateway Timeout",
+    # New transport-layer phrasings the API actually emits on flaky links
+    "API Error: The socket connection was closed unexpectedly.",
+    "fetch failed",
+    "ECONNRESET",
+    "ETIMEDOUT",
+    "504 Gateway Timeout",
+    "Error: connection reset by peer",
+    "connection closed before response",
+])
+def test_is_retryable_error_classifies_transient_messages(message: str) -> None:
+    """Anything that smells like a transient network/capacity error must be
+    retried. The classifier is case-insensitive substring matching, so any
+    phrasing of these markers is enough."""
+    assert _is_retryable_error(message) is True, (
+        f"Expected transient marker in {message!r} to be classified retryable"
+    )
+
+
+@pytest.mark.parametrize("message", [
+    "401 Unauthorized",
+    "403 Forbidden",
+    "Invalid API key",
+    "Bad request: model not found",
+    "The system_prompt field is required",
+    "",  # empty / unknown errors are not retryable
+])
+def test_is_retryable_error_rejects_permanent_failures(message: str) -> None:
+    """Auth, bad-input, and unknown errors must NOT trigger retry — the
+    retry loop would just burn time and hide the real problem."""
+    assert _is_retryable_error(message) is False, (
+        f"Permanent failure {message!r} must not be classified retryable"
+    )
 
 
 class _MockStdout:

@@ -567,3 +567,126 @@ def test_orchestrator_new_session_only_re_runs_new_session_and_stage4(
         f"stage 4 must re-run after corpus changes; got "
         f"{second_runner.calls_by_stage['4']}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Partial-results-survive-failure (stages 2/3/4 cascade guard)
+#
+# Regression guard for the bug where a single failed claude -p call inside
+# stage 4 unwound the whole `evaluate()` call, discarding the successful
+# stages 1a/1b/2/3 output the user had already paid for. Each of these
+# tests injects a failure into a specific stage and asserts the rest of
+# the pipeline still produces structurally-complete output.
+# ---------------------------------------------------------------------------
+
+
+def test_orchestrator_stage_4_failure_preserves_stages_1_through_3(
+    tmp_path: Path,
+) -> None:
+    """A stage-4 failure must NOT raise out of evaluate(). gap_observations
+    is empty, but per_turn_observations, pass_classifications, and
+    session_narratives must all be populated from the upstream stages."""
+    from claude_reflect.agents.pipeline.orchestrator import evaluate
+
+    def fail_only_stage_4(stage: str, system_prompt: str, user_prompt: str) -> bool:
+        return stage == "4"
+
+    runner = StageDispatchRunner(fail_predicate=fail_only_stage_4)
+    sessions = [_make_session("s1", n_turns=3),
+                _make_session("s2", n_turns=3)]
+
+    out = evaluate(
+        sessions=sessions, repo=tmp_path, model="m", runner=runner,
+    )
+
+    assert isinstance(out, dict)
+    assert set(out.keys()) == {
+        "per_turn_observations",
+        "pass_classifications",
+        "gap_observations",
+        "session_narratives",
+    }
+    assert len(out["per_turn_observations"]) > 0, (
+        "stage 1b output must survive a stage 4 failure"
+    )
+    assert len(out["pass_classifications"]) > 0, (
+        "stage 2 output must survive a stage 4 failure"
+    )
+    assert len(out["session_narratives"]) == 2, (
+        "every session must still get a stage 3 narrative"
+    )
+    assert out["gap_observations"] == [], (
+        "stage 4 failed, so gap_observations must be empty (not partial)"
+    )
+
+
+def test_orchestrator_stage_2_failure_isolates_to_one_session(
+    tmp_path: Path,
+) -> None:
+    """A stage-2 failure on session s1 must produce empty classifications
+    for s1 but leave s2's classifications intact, and both sessions must
+    still receive a stage 3 narrative."""
+    from claude_reflect.agents.pipeline.orchestrator import evaluate
+
+    def fail_on_s1_stage_2(stage: str, system_prompt: str, user_prompt: str) -> bool:
+        if stage != "2":
+            return False
+        return _parse_field(user_prompt, "session_id") == "s1"
+
+    runner = StageDispatchRunner(fail_predicate=fail_on_s1_stage_2)
+    sessions = [_make_session("s1", n_turns=3),
+                _make_session("s2", n_turns=3)]
+
+    out = evaluate(
+        sessions=sessions, repo=tmp_path, model="m", runner=runner,
+    )
+
+    by_sid = {p["session_id"]: p for p in out["pass_classifications"]}
+    assert "s2" in by_sid, "s2's classifications must survive s1's stage-2 failure"
+    assert "s1" not in by_sid, (
+        "s1's classifications must be empty when its stage 2 raised"
+    )
+
+    narratives_by_sid = {n["session_id"]: n for n in out["session_narratives"]}
+    assert {"s1", "s2"} <= set(narratives_by_sid), (
+        "both sessions must receive a stage 3 narrative even after a "
+        "per-session stage 2 failure"
+    )
+    assert narratives_by_sid["s1"].get("partial_completion") is True, (
+        "s1's narrative must carry partial_completion=True after the failure"
+    )
+
+
+def test_orchestrator_stage_3_failure_isolates_to_one_session(
+    tmp_path: Path,
+) -> None:
+    """A stage-3 failure on session s1 produces a placeholder narrative
+    with partial_completion=True; the failure must not bring down s2 or
+    the corpus-level stage 4."""
+    from claude_reflect.agents.pipeline.orchestrator import evaluate
+
+    def fail_on_s1_stage_3(stage: str, system_prompt: str, user_prompt: str) -> bool:
+        if stage != "3":
+            return False
+        return _parse_field(user_prompt, "session_id") == "s1"
+
+    runner = StageDispatchRunner(fail_predicate=fail_on_s1_stage_3)
+    sessions = [_make_session("s1", n_turns=3),
+                _make_session("s2", n_turns=3)]
+
+    out = evaluate(
+        sessions=sessions, repo=tmp_path, model="m", runner=runner,
+    )
+
+    by_sid = {n["session_id"]: n for n in out["session_narratives"]}
+    assert {"s1", "s2"} <= set(by_sid), "both sessions must appear in the output"
+    assert by_sid["s1"].get("partial_completion") is True, (
+        "s1's narrative must carry partial_completion=True after stage 3 failed"
+    )
+    assert by_sid["s2"].get("partial_completion", False) is False, (
+        "s2's narrative must NOT inherit s1's partial_completion flag"
+    )
+    # Stage 4 should still run successfully (failure was confined to s1's stage 3).
+    assert runner.calls_by_stage["4"] >= 1, (
+        "stage 4 must still attempt to run after a per-session stage-3 failure"
+    )
