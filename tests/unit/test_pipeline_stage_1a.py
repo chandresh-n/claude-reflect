@@ -285,6 +285,165 @@ def test_describe_turn_caches_result_and_skips_runner_on_rerun(
 # ---------------------------------------------------------------------------
 
 
+def _multi_turn_session(sid: str, n: int):
+    """n turns, each with a unique human message so prompts differ."""
+    return _session(sid, [_turn(f"q{i}", f"a{i}") for i in range(n)])
+
+
+def test_describe_session_turns_preserves_turn_order_under_parallelism(
+    tmp_path: Path,
+) -> None:
+    """Phase 2 contract: with max_concurrent > 1, per-turn calls run on
+    a thread pool and may complete in arbitrary order. The returned
+    list must still be in turn_index order so downstream stages
+    (1b/2/3) see temporal sequence.
+
+    Verified by deliberately making the EARLIEST turn the SLOWEST so
+    completion order is the reverse of submission order; any naive
+    'append as completed' implementation would surface bug visibly.
+    """
+    import threading
+    import time
+
+    from claude_reflect.agents.pipeline.stage_1a import (  # type: ignore
+        describe_session_turns,
+    )
+
+    n_turns = 6
+    s = _multi_turn_session("s-order", n_turns)
+
+    # Make turn 0 sleep the most, turn 1 less, etc. Completion order
+    # under parallel execution will be turn 5, 4, 3, 2, 1, 0 — the
+    # opposite of turn_index order.
+    runner = MagicMock()
+    call_lock = threading.Lock()
+    invocation_order: list[int] = []
+
+    def side(*, system_prompt, user_prompt, model, **kw):
+        # Pluck turn_index out of the prompt.
+        ti = int(_parse_field(user_prompt, "turn_index"))
+        time.sleep(0.05 * (n_turns - ti))  # earlier turn → longer sleep
+        with call_lock:
+            invocation_order.append(ti)
+        return _valid_description_for("s-order", ti)
+    runner.invoke.side_effect = side
+
+    results = describe_session_turns(
+        session=s, runner=runner, repo=tmp_path, model="m",
+        max_concurrent=n_turns,
+    )
+
+    # Completion order should NOT match turn_index order (sanity check
+    # that we actually exercised the out-of-order path; otherwise the
+    # ordering assertion below is vacuous).
+    assert invocation_order != sorted(invocation_order), (
+        f"test setup is broken — calls should have completed out of "
+        f"order with this sleep profile but got {invocation_order!r}"
+    )
+    # Output must still be in turn_index order regardless.
+    assert [r["turn_index"] for r in results] == list(range(n_turns)), (
+        f"parallel describe_session_turns must reorder results by "
+        f"turn_index; got {[r['turn_index'] for r in results]!r}"
+    )
+
+
+def test_describe_session_turns_respects_max_concurrent_ceiling(
+    tmp_path: Path,
+) -> None:
+    """The ceiling must actually bound thread-pool fanout. We submit
+    more turns than the ceiling allows and verify the observed peak
+    in-flight count never exceeds the ceiling."""
+    import threading
+    import time
+
+    from claude_reflect.agents.pipeline.stage_1a import (  # type: ignore
+        describe_session_turns,
+    )
+
+    n_turns = 12
+    ceiling = 3
+    s = _multi_turn_session("s-cap", n_turns)
+
+    in_flight = 0
+    peak = 0
+    lock = threading.Lock()
+    runner = MagicMock()
+
+    def side(*, system_prompt, user_prompt, model, **kw):
+        nonlocal in_flight, peak
+        with lock:
+            in_flight += 1
+            peak = max(peak, in_flight)
+        # Hold the slot long enough that competing submissions would
+        # also try to enter if the pool let them.
+        time.sleep(0.05)
+        with lock:
+            in_flight -= 1
+        ti = int(_parse_field(user_prompt, "turn_index"))
+        return _valid_description_for("s-cap", ti)
+    runner.invoke.side_effect = side
+
+    describe_session_turns(
+        session=s, runner=runner, repo=tmp_path, model="m",
+        max_concurrent=ceiling,
+    )
+    assert peak <= ceiling, (
+        f"max_concurrent={ceiling} but observed {peak} concurrent calls"
+    )
+    # Lower bound: we should have exceeded sequential execution.
+    assert peak > 1, (
+        f"max_concurrent={ceiling} but the pool never ran more than 1 "
+        f"call concurrently — parallelism not actually exercised"
+    )
+
+
+def test_describe_session_turns_parallel_isolates_per_turn_failure(
+    tmp_path: Path,
+) -> None:
+    """Failure isolation must hold under parallelism: one failing
+    invocation must surface as a _failed sentinel, not a thread-pool
+    exception that crashes the whole call."""
+    from claude_reflect.agents.pipeline.stage_1a import (  # type: ignore
+        describe_session_turns,
+    )
+
+    s = _multi_turn_session("s-fail", 5)
+    runner = MagicMock()
+
+    def side(*, system_prompt, user_prompt, model, **kw):
+        ti = int(_parse_field(user_prompt, "turn_index"))
+        if ti == 2:
+            raise RuntimeError("simulated failure on turn 2")
+        return _valid_description_for("s-fail", ti)
+    runner.invoke.side_effect = side
+
+    results = describe_session_turns(
+        session=s, runner=runner, repo=tmp_path, model="m",
+        max_concurrent=4,
+    )
+
+    assert len(results) == 5
+    failures = [r for r in results if r.get("_failed")]
+    successes = [r for r in results if not r.get("_failed")]
+    assert len(failures) == 1
+    assert failures[0]["turn_index"] == 2
+    assert len(successes) == 4
+
+
+def _parse_field(prompt: str, field: str) -> str:
+    """Pull ``field: value`` out of a stage 1a prompt. Duplicated from
+    the orchestrator test for self-containment."""
+    for line in prompt.splitlines():
+        line = line.strip()
+        prefix = f"{field}:"
+        if line.startswith(prefix):
+            return line[len(prefix):].strip()
+    raise AssertionError(
+        f"could not find field {field!r} in prompt; first 400 chars="
+        f"{prompt[:400]!r}"
+    )
+
+
 def test_one_turn_failure_does_not_taint_other_turns(tmp_path: Path) -> None:
     """A failed runner call for turn N must not prevent turn N+1's
     description from being produced.  This is the partial-with-flag

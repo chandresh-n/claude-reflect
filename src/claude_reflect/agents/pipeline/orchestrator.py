@@ -73,6 +73,7 @@ def evaluate(
     write_gap_records: bool = True,
     log_dir: Optional[Path] = None,
     stage_1a_model: Optional[str] = None,
+    max_concurrent_turn_descriptions: int = 1,
 ) -> dict:
     """Run the staged evaluator pipeline over ``sessions``.
 
@@ -85,6 +86,12 @@ def evaluate(
         stage_1a_model: Optional override for stage 1a (per-turn
             description), which runs once per turn and benefits from a
             smaller, cheaper model. Falls back to ``model`` if None.
+        max_concurrent_turn_descriptions: Ceiling on parallel stage-1a
+            calls *within one session*. The default of 1 preserves the
+            historical sequential behavior; values >1 fan the per-turn
+            describer out to a bounded thread pool. Results are
+            re-ordered by turn_index before returning so downstream
+            stages always see temporal sequence.
     """
     if runner is None:
         runner = ClaudeCLIRunner()
@@ -107,6 +114,7 @@ def evaluate(
         # --- Stage 1a: per-turn description (per-turn failure isolated)
         descriptions = describe_session_turns(
             session=session, runner=runner, repo=repo, model=stage_1a_model,
+            max_concurrent=max_concurrent_turn_descriptions,
         )
         stage_1a_failures = [
             d for d in descriptions

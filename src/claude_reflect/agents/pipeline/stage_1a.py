@@ -162,35 +162,84 @@ def describe_turn(
     return parsed
 
 
+def _describe_one_safely(
+    session_id: str, turn_index: int, turn: Turn,
+    runner, repo: Path, model: str,
+) -> dict:
+    """Per-turn worker. Always returns a dict (never raises) so the
+    pool's ``.result()`` calls never throw and per-turn failures are
+    isolated. Each call writes to its own cache key on disk; the cache
+    is per-content-hash so different turns never collide."""
+    try:
+        return describe_turn(
+            session_id=session_id, turn_index=turn_index,
+            turn=turn, runner=runner, repo=repo, model=model,
+        )
+    except Exception as exc:
+        return {
+            "_failed": True,
+            "session_id": session_id,
+            "turn_index": turn_index,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+
 def describe_session_turns(
     session: Session,
     runner,
     repo: Path,
     model: str,
+    max_concurrent: int = 1,
 ) -> List[dict]:
     """Describe every turn in a session with per-turn failure isolation.
 
     Returns a list aligned with ``session.turns``. Each entry is either
     a full description dict or a ``{"_failed": True, ...}`` sentinel.
-    A failure on one turn does not affect any other turn's description.
+
+    Concurrency:
+      - ``max_concurrent=1`` (default) preserves the original sequential
+        behavior so callers that do not opt into parallelism see no
+        behavior change.
+      - ``max_concurrent>1`` fans the per-turn calls out to a bounded
+        thread pool. The runner is stateless, the cache is keyed per
+        turn-content (no write contention), and the return list is
+        re-ordered by ``turn_index`` before being returned so the
+        downstream pipeline always sees descriptions in temporal
+        sequence regardless of completion order.
+
+    A failure on one turn never affects another turn's description.
     """
-    results: List[dict] = []
-    for turn_index, turn in enumerate(session.turns):
-        try:
-            description = describe_turn(
-                session_id=session.session_id,
-                turn_index=turn_index,
-                turn=turn,
-                runner=runner,
-                repo=repo,
-                model=model,
+    turns = list(enumerate(session.turns))
+    n = len(turns)
+    if n == 0:
+        return []
+
+    if max_concurrent <= 1:
+        return [
+            _describe_one_safely(
+                session.session_id, ti, t, runner, repo, model,
             )
-            results.append(description)
-        except Exception as exc:
-            results.append({
-                "_failed": True,
-                "session_id": session.session_id,
-                "turn_index": turn_index,
-                "error": f"{type(exc).__name__}: {exc}",
-            })
-    return results
+            for ti, t in turns
+        ]
+
+    # Parallel path. Bound max_workers to the actual workload so we don't
+    # spin up idle threads on small sessions.
+    from concurrent.futures import ThreadPoolExecutor
+
+    results: List[dict | None] = [None] * n
+    workers = min(max_concurrent, n)
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        futures = {
+            ex.submit(
+                _describe_one_safely,
+                session.session_id, ti, t, runner, repo, model,
+            ): ti
+            for ti, t in turns
+        }
+        for fut in futures:
+            ti = futures[fut]
+            # _describe_one_safely never raises; .result() returns a dict.
+            results[ti] = fut.result()
+    # Drop the None placeholders by reassembling in index order. Order
+    # is preserved structurally because we wrote to results[ti].
+    return [r for r in results if r is not None]

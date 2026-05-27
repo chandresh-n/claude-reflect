@@ -407,6 +407,9 @@ class ReviewCommand:
                     repo,
                     model=evaluator_model,
                     stage_1a_model=stage_1a_model,
+                    max_concurrent_turn_descriptions=(
+                        parallelism["max_concurrent_turn_descriptions"]
+                    ),
                 )
                 gaps = result.get("gap_observations", [])
                 self._log(f"Evaluator found {len(gaps)} gap observation(s).")
