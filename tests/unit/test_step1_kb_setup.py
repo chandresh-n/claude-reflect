@@ -45,8 +45,11 @@ def cfg(repo: Path) -> dict:
 # Required keys from IMPLEMENTATION.md § "Configuration file"
 # ---------------------------------------------------------------------------
 
+# Note: ``models`` is intentionally absent from this list. Per the c5
+# iteration, kb_setup leaves the models section out so the first review
+# pass can route through the interactive picker (or the non-TTY
+# fallback). The TestConfigModels class below pins that new contract.
 REQUIRED_TOP_LEVEL_KEYS = [
-    "models",
     "maintenance",
     "stale_gap_threshold_sessions",
     "forced_novelty",
@@ -155,33 +158,56 @@ class TestConfigTopLevel:
 # ---------------------------------------------------------------------------
 
 class TestConfigModels:
-    """models section has evaluator/proposer/author, all strings, correct families."""
+    """models is intentionally absent from kb_setup defaults.
+
+    Per the c5 iteration (interactive model picker), the models section
+    is no longer written by setup(). It is filled on the first review
+    pass — either by the picker when stdin is a TTY, or by the cli's
+    fallback _DEFAULT_MODELS when non-interactive. These tests pin both
+    halves of that contract.
+    """
+
+    def test_setup_does_not_write_models_section(self, tmp_git_repo):
+        """kb_setup must leave the models section absent so the first
+        review can route through the picker."""
+        setup(tmp_git_repo)
+        assert "models" not in cfg(tmp_git_repo), (
+            "models section must be absent after kb_setup; the first-run "
+            "picker (or non-TTY fallback in cli) is responsible for "
+            "populating it."
+        )
 
     @pytest.mark.parametrize("key", REQUIRED_MODEL_KEYS)
-    def test_models_has_required_key(self, tmp_git_repo, key):
-        setup(tmp_git_repo)
-        assert key in cfg(tmp_git_repo)["models"], f"models.{key} missing"
+    def test_cli_default_models_has_required_key(self, key):
+        """cli._DEFAULT_MODELS must cover every required agent so the
+        non-TTY fallback resolves cleanly."""
+        from claude_reflect.cli import _DEFAULT_MODELS
+        assert key in _DEFAULT_MODELS, f"_DEFAULT_MODELS.{key} missing"
 
     @pytest.mark.parametrize("key", REQUIRED_MODEL_KEYS)
-    def test_model_value_is_non_empty_string(self, tmp_git_repo, key):
-        setup(tmp_git_repo)
-        val = cfg(tmp_git_repo)["models"][key]
-        assert isinstance(val, str) and val, f"models.{key} must be a non-empty string"
+    def test_cli_default_model_value_is_non_empty_string(self, key):
+        from claude_reflect.cli import _DEFAULT_MODELS
+        val = _DEFAULT_MODELS[key]
+        assert isinstance(val, str) and val, (
+            f"_DEFAULT_MODELS.{key} must be a non-empty string"
+        )
 
-    def test_evaluator_model_is_opus_family(self, tmp_git_repo):
-        """Evaluator default is Opus (1M context for large sessions)."""
-        setup(tmp_git_repo)
-        assert "opus" in cfg(tmp_git_repo)["models"]["evaluator"].lower()
+    def test_cli_default_evaluator_is_opus_family(self):
+        """Evaluator default stays in the Opus family (1M context for
+        large sessions)."""
+        from claude_reflect.cli import _DEFAULT_MODELS
+        assert "opus" in _DEFAULT_MODELS["evaluator"].lower()
 
-    def test_proposer_model_is_opus_family(self, tmp_git_repo):
-        """Proposer default is Opus (hardest reasoning). Spec: IMPLEMENTATION.md § 'Default models'."""
-        setup(tmp_git_repo)
-        assert "opus" in cfg(tmp_git_repo)["models"]["proposer"].lower()
+    def test_cli_default_proposer_is_opus_family(self):
+        """Proposer default stays in the Opus family (hardest reasoning)."""
+        from claude_reflect.cli import _DEFAULT_MODELS
+        assert "opus" in _DEFAULT_MODELS["proposer"].lower()
 
-    def test_author_model_is_sonnet_family(self, tmp_git_repo):
-        """Author default is Sonnet. Spec: IMPLEMENTATION.md § 'Default models'."""
-        setup(tmp_git_repo)
-        assert "sonnet" in cfg(tmp_git_repo)["models"]["author"].lower()
+    def test_cli_default_author_is_sonnet_family(self):
+        """Author default stays in the Sonnet family (cheaper, mechanical
+        diff writing)."""
+        from claude_reflect.cli import _DEFAULT_MODELS
+        assert "sonnet" in _DEFAULT_MODELS["author"].lower()
 
 
 # ---------------------------------------------------------------------------

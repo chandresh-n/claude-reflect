@@ -233,6 +233,16 @@ def build_parser() -> argparse.ArgumentParser:
             "agent code where prompt_version has not been bumped."
         ),
     )
+    review_p.add_argument(
+        "--pick-models", dest="pick_models", action="store_true", default=False,
+        help=(
+            "Re-trigger the interactive model picker for evaluator / "
+            "proposer / author, even when config.yaml already has a "
+            "models section. By default the picker runs only on the very "
+            "first review in a repo. Requires a TTY; ignored if stdin "
+            "isn't interactive."
+        ),
+    )
 
     # status
     status_p = sub.add_parser("status", help="Report knowledge-base state.")
@@ -264,6 +274,7 @@ class ReviewCommand:
         pick: bool = False,
         fixtures_dir: Optional[Path] = None,
         no_cache: bool = False,
+        pick_models: bool = False,
     ):
         self.repo = repo
         self.date_range = date_range
@@ -273,6 +284,7 @@ class ReviewCommand:
         self.pick = pick
         self.fixtures_dir = fixtures_dir
         self.no_cache = no_cache
+        self.pick_models = pick_models
 
     def execute(self) -> dict:
         """Run the review pass and return a result dict."""
@@ -304,8 +316,14 @@ class ReviewCommand:
                     f"Cannot resume: no run state found for {self.resume_run_id}"
                 )
 
-        # Load config for model choices
+        # Load config and resolve per-agent models. The picker fires when
+        # --pick-models is set or the repo's config has no models section
+        # (first-run); otherwise the saved selection is used silently.
         config = _load_config(self.repo)
+        resolved_models = _resolve_models(
+            self.repo, config, pick_models=self.pick_models, log=self._log,
+        )
+        config.setdefault("models", {}).update(resolved_models)
 
         # Collect sessions: fixtures-dir > --session-id > --range.
         if self.fixtures_dir:
@@ -358,9 +376,9 @@ class ReviewCommand:
         self._log(f"Found {len(sessions)} session(s) selected.")
 
         # Build agent wrappers that use the real implementations
-        evaluator_model = config.get("models", {}).get("evaluator", "claude-opus-4-6")
-        proposer_model = config.get("models", {}).get("proposer", "claude-opus-4-6")
-        author_model = config.get("models", {}).get("author", "claude-sonnet-4-6")
+        evaluator_model = config["models"]["evaluator"]
+        proposer_model = config["models"]["proposer"]
+        author_model = config["models"]["author"]
         verbose = self.verbose
         repo = self.repo
 
@@ -664,6 +682,7 @@ def main(argv: Optional[List[str]] = None) -> None:
             pick=args.pick,
             fixtures_dir=fixtures_dir_path,
             no_cache=args.no_cache,
+            pick_models=args.pick_models,
         )
         result = cmd.execute()
         if result:
@@ -725,6 +744,95 @@ def _load_config(repo: Path) -> dict:
     if config_path.exists():
         return yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     return {}
+
+
+# Current Claude model defaults. The picker (and a non-TTY fall-through)
+# both use these when the user's config.yaml has no models section.
+# Bump these when a new model family ships.
+_DEFAULT_MODELS = {
+    "evaluator": "claude-opus-4-7",
+    "proposer": "claude-opus-4-7",
+    "author": "claude-sonnet-4-6",
+}
+
+
+_AGENT_DESCRIPTIONS = {
+    "evaluator": "reads sessions, identifies patterns",
+    "proposer": "drafts changes (deepest reasoning)",
+    "author": "writes git diffs",
+}
+
+
+def _prompt_for_models(current: dict) -> dict:
+    """Interactive picker for per-agent model selection.
+
+    Shows each agent's current value as the default; an empty answer
+    accepts it. Returns the resolved {agent: model_id} dict. Caller is
+    responsible for persisting the result.
+
+    Should only be called when ``sys.stdin.isatty()`` — non-interactive
+    contexts (CI, piped stdin) should skip the picker entirely.
+    """
+    print(
+        "First-time setup: pick the Claude model for each agent.\n"
+        "Press Enter to accept the default in brackets.\n",
+        file=sys.stderr, flush=True,
+    )
+    chosen: dict[str, str] = {}
+    for agent, desc in _AGENT_DESCRIPTIONS.items():
+        default = current.get(agent, _DEFAULT_MODELS[agent])
+        try:
+            raw = input(f"  {agent.title():9s} ({desc}) [{default}]: ")
+        except EOFError:
+            raw = ""
+        chosen[agent] = raw.strip() or default
+    return chosen
+
+
+def _save_models_to_config(repo: Path, models: dict) -> None:
+    """Merge a models dict into config.yaml without disturbing other
+    sections."""
+    config_path = repo / ".claude-reflect" / "config.yaml"
+    existing: dict = {}
+    if config_path.exists():
+        existing = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    existing["models"] = dict(models)
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        yaml.dump(existing, default_flow_style=False, sort_keys=False),
+        encoding="utf-8",
+    )
+
+
+def _resolve_models(
+    repo: Path, config: dict, *, pick_models: bool, log: callable,
+) -> dict:
+    """Decide what model to use per agent and persist the choice.
+
+    Triggers the interactive picker when:
+      - ``--pick-models`` was passed explicitly, OR
+      - config.yaml has no ``models`` section (fresh repo).
+
+    Falls back to ``_DEFAULT_MODELS`` (silently) on non-interactive
+    stdin so scripted / CI runs do not hang waiting for input.
+    """
+    has_models = bool(config.get("models"))
+    should_prompt = pick_models or not has_models
+    if not should_prompt:
+        return dict(config["models"])
+
+    if not sys.stdin.isatty():
+        if pick_models:
+            log(
+                "--pick-models requested but stdin is not a TTY; "
+                "falling back to defaults silently."
+            )
+        return dict(_DEFAULT_MODELS)
+
+    chosen = _prompt_for_models(config.get("models") or {})
+    _save_models_to_config(repo, chosen)
+    log(f"Saved model selection to .claude-reflect/config.yaml.")
+    return chosen
 
 
 def _find_session_log_dir(repo: Path) -> Optional[Path]:

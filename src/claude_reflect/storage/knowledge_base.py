@@ -23,12 +23,14 @@ import yaml
 
 # Expressed as a Python dict so that field order and types are explicit and
 # not subject to YAML-round-trip drift on subsequent calls.
+# Note: the ``models`` section is deliberately absent from the default
+# config so a fresh review run can trigger the first-run picker in
+# ReviewCommand.execute(). On an interactive shell the picker prompts
+# the operator to choose models per agent; on a non-interactive shell
+# the cli falls back to its own current model IDs and the picker is
+# skipped silently. Once chosen, the models section is persisted here
+# and the picker doesn't fire again unless --pick-models is passed.
 _DEFAULT_CONFIG: dict = {
-    "models": {
-        "evaluator": "claude-opus-4-6",
-        "proposer": "claude-opus-4-6",
-        "author": "claude-sonnet-4-6",
-    },
     "maintenance": {
         "trigger_thresholds": {
             "new_sessions": 10,

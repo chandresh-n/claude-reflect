@@ -537,6 +537,174 @@ class TestStageErrorSurfacing:
         )
 
 
+class TestModelPicker:
+    """First-run model picker + --pick-models flag (c5).
+
+    Contract:
+      - Picker fires when --pick-models is set OR config has no models
+        section.
+      - On a non-interactive stdin, the picker is skipped and the
+        fallback _DEFAULT_MODELS is used silently.
+      - When the picker runs, its output is persisted to config.yaml
+        so subsequent runs skip the picker.
+    """
+
+    def test_pick_models_flag_parsed(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["review", "--pick-models"])
+        assert args.pick_models is True
+
+    def test_pick_models_default_is_false(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["review", "--range", "last 7 days"])
+        assert args.pick_models is False
+
+    def test_resolve_models_falls_back_silently_when_non_tty(
+        self, tmp_path: Path, monkeypatch,
+    ) -> None:
+        """No TTY + no models in config = use _DEFAULT_MODELS without
+        hanging on input()."""
+        from claude_reflect.cli import _resolve_models, _DEFAULT_MODELS
+        _init_git_repo(tmp_path)
+        _setup_kb(tmp_path)
+
+        # Force stdin to look non-interactive.
+        monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+        # Empty config — no models section yet.
+        config: dict = {}
+        logs: list[str] = []
+        models = _resolve_models(
+            tmp_path, config, pick_models=False, log=logs.append,
+        )
+
+        assert models == _DEFAULT_MODELS, (
+            f"non-TTY fallback must return _DEFAULT_MODELS verbatim; "
+            f"got {models!r}"
+        )
+
+    def test_resolve_models_uses_saved_section_when_present(
+        self, tmp_path: Path, monkeypatch,
+    ) -> None:
+        """If config already has a models section, the picker must not
+        fire — saved values are returned silently."""
+        from claude_reflect.cli import _resolve_models
+        _init_git_repo(tmp_path)
+        _setup_kb(tmp_path)
+
+        # If the picker fires this test will hang (input() with no TTY would
+        # raise EOFError and the test would still hang on the prompt write).
+        # Pin stdin to look interactive so we'd notice an unintended prompt.
+        monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+
+        config = {
+            "models": {
+                "evaluator": "user-chosen-opus",
+                "proposer": "user-chosen-opus",
+                "author": "user-chosen-sonnet",
+            },
+        }
+        logs: list[str] = []
+        # Patch input() to raise so any unintended prompt blows up loudly.
+        monkeypatch.setattr(
+            "builtins.input",
+            lambda _: pytest.fail("picker fired but config already had models"),
+        )
+
+        models = _resolve_models(
+            tmp_path, config, pick_models=False, log=logs.append,
+        )
+        assert models["evaluator"] == "user-chosen-opus"
+        assert models["proposer"] == "user-chosen-opus"
+        assert models["author"] == "user-chosen-sonnet"
+
+    def test_picker_writes_selection_to_config(
+        self, tmp_path: Path, monkeypatch,
+    ) -> None:
+        """When the picker accepts defaults (empty input), the resolved
+        models must be persisted to config.yaml so the next run skips
+        the picker entirely."""
+        from claude_reflect.cli import _resolve_models, _DEFAULT_MODELS
+        _init_git_repo(tmp_path)
+        _setup_kb(tmp_path)
+
+        monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+        # Empty answer → accept default for every agent.
+        monkeypatch.setattr("builtins.input", lambda _prompt: "")
+
+        config: dict = {}
+        logs: list[str] = []
+        models = _resolve_models(
+            tmp_path, config, pick_models=False, log=logs.append,
+        )
+
+        assert models == _DEFAULT_MODELS
+
+        # Re-load config.yaml from disk and verify the section was persisted.
+        import yaml
+        config_path = tmp_path / ".claude-reflect" / "config.yaml"
+        on_disk = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        assert on_disk["models"] == _DEFAULT_MODELS, (
+            f"picker must persist its choice to config.yaml; "
+            f"got {on_disk.get('models')!r}"
+        )
+
+    def test_picker_save_preserves_other_config_sections(
+        self, tmp_path: Path, monkeypatch,
+    ) -> None:
+        """Writing the models section must NOT clobber other top-level
+        keys (maintenance, forced_novelty, etc.)."""
+        from claude_reflect.cli import _resolve_models
+        _init_git_repo(tmp_path)
+        _setup_kb(tmp_path)
+        import yaml
+
+        # _setup_kb has already written non-models sections. Capture them.
+        config_path = tmp_path / ".claude-reflect" / "config.yaml"
+        before = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        non_models_before = {k: v for k, v in before.items() if k != "models"}
+        assert non_models_before, "kb_setup should leave non-models config"
+
+        monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+        monkeypatch.setattr("builtins.input", lambda _p: "")
+        _resolve_models(tmp_path, before, pick_models=False, log=lambda _m: None)
+
+        after = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        non_models_after = {k: v for k, v in after.items() if k != "models"}
+        assert non_models_after == non_models_before, (
+            "non-models sections must round-trip through the save; "
+            f"before={non_models_before!r} after={non_models_after!r}"
+        )
+
+    def test_pick_models_flag_forces_picker_even_with_saved_models(
+        self, tmp_path: Path, monkeypatch,
+    ) -> None:
+        """--pick-models must re-prompt even when config already has a
+        models section, so users can update their selection."""
+        from claude_reflect.cli import _resolve_models
+        _init_git_repo(tmp_path)
+        _setup_kb(tmp_path)
+
+        monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+        # Pretend the user types specific custom values.
+        answers = iter(["custom-eval", "custom-proposer", "custom-author"])
+        monkeypatch.setattr("builtins.input", lambda _p: next(answers))
+
+        config = {"models": {
+            "evaluator": "old-eval",
+            "proposer": "old-proposer",
+            "author": "old-author",
+        }}
+        models = _resolve_models(
+            tmp_path, config, pick_models=True, log=lambda _m: None,
+        )
+
+        assert models == {
+            "evaluator": "custom-eval",
+            "proposer": "custom-proposer",
+            "author": "custom-author",
+        }
+
+
 class TestVerboseFlag:
     """--verbose adds streamed output and tool-call traces."""
 
