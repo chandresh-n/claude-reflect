@@ -53,6 +53,7 @@ _PANEL_HEIGHT = _TAIL_LINES + 1
 
 # Substrings in an error message that signal a transient failure.
 _RETRYABLE_MARKERS = (
+    # Server-side overload / rate-limit / capacity
     "overloaded",
     "rate_limit",
     "rate-limit",
@@ -64,8 +65,20 @@ _RETRYABLE_MARKERS = (
     "service unavailable",
     "internal_server_error",
     "internal server error",
+    # Gateway / network plane
     "bad gateway",
     "gateway timeout",
+    "504",
+    # Transport-level: cli ↔ API connectivity that drops mid-stream.
+    # Conservative on purpose — only retry on phrasings that imply the
+    # request was interrupted, not refused for an authoritative reason.
+    "socket",
+    "connection closed",
+    "connection was closed",
+    "connection reset",
+    "econnreset",
+    "etimedout",
+    "fetch failed",
 )
 
 

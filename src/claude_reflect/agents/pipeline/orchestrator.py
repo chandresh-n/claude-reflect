@@ -16,10 +16,13 @@ ZERO model calls (every stage hits its per-stage cache). Adding one
 new session to the window only re-runs that session's 1a/1b/2/3 plus
 the corpus-level stage 4.
 
-Partial-with-flag failure propagation: failures inside stage 1a (one
-turn) and stage 1b (one window) are caught upstream; the orchestrator
-records ``partial_completion=True`` on the affected session's stage 3
-narrative without dropping the session.
+Partial-results-survive-failure: every stage is wrapped so a single
+failure does not discard the whole evaluator output. Stage 1a/1b mark
+the affected session ``partial_completion=True``. Stage 2/3/4 catch
+the failure, log it to the stage artefact, and contribute empty
+output for the failed slice — the rest of the pipeline runs to
+completion, and the cache holds whatever did succeed so the next run
+picks up from where it stopped.
 
 Progress for each invocation lands under
 ``<repo>/.claude-reflect/logs/eval/<UTC-timestamp>/stages/<stage_id>/``
@@ -32,6 +35,7 @@ docs/spec/01-data-structures/evaluator-output.md.
 from __future__ import annotations
 
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
@@ -142,15 +146,27 @@ def evaluate(
         # --- Stage 2: per-session pass refinement
         # Skip the model call when there are no drafts (1b fully failed)
         # — there is nothing for the refiner to refine.
+        stage_2_error: Optional[str] = None
         if drafts:
-            classifications = refine_session_passes(
-                session_id=sid,
-                drafts=drafts,
-                total_turns=len(session.turns),
-                runner=runner,
-                repo=repo,
-                model=model,
-            )
+            try:
+                classifications = refine_session_passes(
+                    session_id=sid,
+                    drafts=drafts,
+                    total_turns=len(session.turns),
+                    runner=runner,
+                    repo=repo,
+                    model=model,
+                )
+            except Exception as exc:
+                stage_2_error = f"{type(exc).__name__}: {exc}"
+                classifications = []
+                partial_completion = True
+                print(
+                    f"  [orchestrator] stage 2 failed for {sid}: {stage_2_error} — "
+                    f"continuing with empty classifications for this session.",
+                    file=sys.stderr,
+                    flush=True,
+                )
         else:
             classifications = []
         pass_classifications_all.extend(classifications)
@@ -158,37 +174,68 @@ def evaluate(
             "session_id": sid,
             "pass_count": len(classifications),
             "skipped": not drafts,
+            "error": stage_2_error,
         })
 
         # --- Stage 3: per-session narrative (carries partial flag)
-        narrative = summarize_session(
-            session_id=sid,
-            per_turn_observations=session_observations,
-            pass_classifications=classifications,
-            gap_observations=[],
-            runner=runner,
-            repo=repo,
-            model=model,
-            partial_completion=partial_completion,
-        )
+        stage_3_error: Optional[str] = None
+        try:
+            narrative = summarize_session(
+                session_id=sid,
+                per_turn_observations=session_observations,
+                pass_classifications=classifications,
+                gap_observations=[],
+                runner=runner,
+                repo=repo,
+                model=model,
+                partial_completion=partial_completion,
+            )
+        except Exception as exc:
+            stage_3_error = f"{type(exc).__name__}: {exc}"
+            narrative = {
+                "session_id": sid,
+                "narrative": "",
+                "partial_completion": True,
+                "error": stage_3_error,
+            }
+            print(
+                f"  [orchestrator] stage 3 failed for {sid}: {stage_3_error} — "
+                f"continuing with empty narrative for this session.",
+                file=sys.stderr,
+                flush=True,
+            )
         narratives_all.append(narrative)
         _write_stage_artefact(stages_dir, "3", sid, {
             "session_id": sid,
             "partial_completion": partial_completion,
+            "error": stage_3_error,
         })
 
     # --- Stage 4: corpus-level gap observations + gap-record side effects
-    gap_observations = identify_corpus_gaps(
-        per_turn_observations=per_turn_observations_all,
-        pass_classifications=pass_classifications_all,
-        session_narratives=narratives_all,
-        runner=runner,
-        repo=repo,
-        model=model,
-        write_gap_records=write_gap_records,
-    )
+    stage_4_error: Optional[str] = None
+    try:
+        gap_observations = identify_corpus_gaps(
+            per_turn_observations=per_turn_observations_all,
+            pass_classifications=pass_classifications_all,
+            session_narratives=narratives_all,
+            runner=runner,
+            repo=repo,
+            model=model,
+            write_gap_records=write_gap_records,
+        )
+    except Exception as exc:
+        stage_4_error = f"{type(exc).__name__}: {exc}"
+        gap_observations = []
+        print(
+            f"  [orchestrator] stage 4 failed: {stage_4_error} — "
+            f"returning partial evaluator output (no corpus gap observations). "
+            f"Re-run to retry; stages 1-3 are cached.",
+            file=sys.stderr,
+            flush=True,
+        )
     _write_stage_artefact(stages_dir, "4", "corpus", {
         "gap_observation_count": len(gap_observations),
+        "error": stage_4_error,
     })
 
     return {

@@ -344,6 +344,10 @@ class ReviewCommand:
 
         _empty_eval = {"per_turn_observations": [], "pass_classifications": [], "gap_observations": [], "session_narratives": []}
 
+        # Track stage failures so the final result reports them honestly
+        # instead of looking like a clean "complete, 0 decisions" run.
+        self._stage_errors: List[str] = []
+
         def real_evaluator(sessions, repo, **kwargs):
             if not sessions:
                 self._log("No sessions to evaluate — skipping evaluator.")
@@ -362,6 +366,7 @@ class ReviewCommand:
                 self._log(f"Evaluator found {len(gaps)} gap observation(s).")
                 return result
             except EvaluatorError as e:
+                self._stage_errors.append(f"evaluator: {e}")
                 self._log(f"Evaluator error: {e}")
                 self._log(
                     "Partial batch results were saved under "
@@ -370,9 +375,11 @@ class ReviewCommand:
                 )
                 return _empty_eval
             except ClaudeRunnerError as e:
+                self._stage_errors.append(f"evaluator (Claude runner): {e}")
                 self._log(f"Evaluator failed (Claude runner): {e}")
                 return _empty_eval
             except Exception as e:
+                self._stage_errors.append(f"evaluator: {type(e).__name__}: {e}")
                 self._log(f"Evaluator failed: {e}")
                 return _empty_eval
 
@@ -398,7 +405,20 @@ class ReviewCommand:
                 self._log(f"Proposer generated {count} proposal(s).")
                 return result
             except ProposerError as e:
+                self._stage_errors.append(f"proposer: {e}")
                 self._log(f"Proposer error: {e}")
+                self._log(
+                    "Evaluator output is cached, so re-running this command will "
+                    "skip straight back to the proposer."
+                )
+                return {"proposals": [], "proposal_ids": []}
+            except ClaudeRunnerError as e:
+                self._stage_errors.append(f"proposer (Claude runner): {e}")
+                self._log(f"Proposer failed (Claude runner): {e}")
+                self._log(
+                    "Evaluator output is cached, so re-running this command will "
+                    "skip straight back to the proposer."
+                )
                 return {"proposals": [], "proposal_ids": []}
 
         def real_author(proposal, repo, **kwargs):
@@ -425,13 +445,29 @@ class ReviewCommand:
         run_loop = self._make_run_loop()
         state = run_loop.run()
 
-        self._log(f"Run {state.run_id} completed with status: {state.status}")
+        # If any stage logged a transient/agent error, mark the run as
+        # degraded so callers (humans, CI, scripts) can tell the difference
+        # between "ran clean with no proposals" and "ran but lost data".
+        # Stage caches are intact, so re-running picks up where this left off.
+        final_status = state.status
+        if self._stage_errors:
+            final_status = "complete_with_errors"
+            self._log(
+                f"Run {state.run_id} completed with {len(self._stage_errors)} "
+                f"stage error(s) — see 'errors' in the result. Re-run to retry "
+                f"(cached stages will skip)."
+            )
+        else:
+            self._log(f"Run {state.run_id} completed with status: {state.status}")
 
-        return {
+        result_dict: Dict[str, Any] = {
             "run_id": state.run_id,
-            "status": state.status,
+            "status": final_status,
             "decisions": state.decisions,
         }
+        if self._stage_errors:
+            result_dict["errors"] = list(self._stage_errors)
+        return result_dict
 
     def _make_run_loop(self) -> RunLoop:
         """Create a RunLoop instance wired to agents.
