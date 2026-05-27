@@ -450,8 +450,41 @@ class ReviewCommand:
                 self._log(f"  Author result: {result.get('status')}")
                 return result
             except AuthorError as e:
+                # Author reported an honest "I cannot do this" — expected
+                # outcome, not a stage_errors event.
                 self._log(f"  Author error for {pid}: {e}")
-                return {"status": "author_failed", "author_failure_reason": str(e)}
+                return {
+                    "status": "author_failed",
+                    "proposal_id": pid,
+                    "author_failure_reason": str(e),
+                }
+            except ClaudeRunnerError as e:
+                # Transient API failure during author. Surface as a stage
+                # error so the run reports complete_with_errors, and return
+                # author_failed for this proposal so the rest of the batch
+                # still renders. Cached upstream stages mean a re-run picks
+                # up here cheaply.
+                self._stage_errors.append(f"author {pid} (Claude runner): {e}")
+                self._log(f"  Author failed (Claude runner) for {pid}: {e}")
+                return {
+                    "status": "author_failed",
+                    "proposal_id": pid,
+                    "author_failure_reason": f"Claude runner failed: {e}",
+                }
+            except Exception as e:
+                # Belt-and-suspenders. Any other exception out of the author
+                # implementation must not crash the whole pipeline mid-batch.
+                self._stage_errors.append(
+                    f"author {pid} ({type(e).__name__}): {e}"
+                )
+                self._log(
+                    f"  Author failed unexpectedly for {pid}: {type(e).__name__}: {e}"
+                )
+                return {
+                    "status": "author_failed",
+                    "proposal_id": pid,
+                    "author_failure_reason": f"Unexpected {type(e).__name__}: {e}",
+                }
 
         def real_human_review(batch):
             return _human_review_via_markdown(batch, repo, date_range_dict, verbose=verbose)

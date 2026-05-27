@@ -342,6 +342,171 @@ class TestStageErrorSurfacing:
             f"the evaluator error must be in 'errors'; got {result['errors']!r}"
         )
 
+    def test_author_claude_runner_failure_becomes_author_failed(
+        self, tmp_path: Path,
+    ) -> None:
+        """A ClaudeRunnerError raised from inside author_agent must NOT
+        crash the run mid-batch. The wrapper must catch it, return an
+        author_failed result for that proposal (so the renderer can show
+        an AUTHOR FAILED template), and record the failure in
+        stage_errors so the final status is complete_with_errors.
+        """
+        _init_git_repo(tmp_path)
+        _setup_kb(tmp_path)
+
+        cmd = ReviewCommand(
+            repo=tmp_path, date_range="last 7 days", verbose=False,
+        )
+
+        with patch("claude_reflect.cli.author_agent") as mock_author, \
+             patch.object(cmd, "_make_run_loop") as mock_make:
+            mock_author.side_effect = ClaudeRunnerError(
+                "simulated socket close during author"
+            )
+
+            captured = {}
+
+            def fake_run():
+                # Drive the real_author wrapper exactly the way the run loop
+                # would for a single proposal.
+                proposal = {"proposal_id": "prop-x", "title": "x"}
+                captured["author_result"] = cmd._real_author(proposal, tmp_path)
+                state = MagicMock()
+                state.status = "complete"
+                state.decisions = []
+                state.run_id = "run-author-fail"
+                state.proposal_batch = {"proposals": [proposal]}
+                return state
+
+            mock_loop = MagicMock()
+            mock_loop.run.side_effect = fake_run
+            mock_make.return_value = mock_loop
+
+            result = cmd.execute()
+
+        assert captured["author_result"]["status"] == "author_failed", (
+            "ClaudeRunnerError from author must produce status=author_failed, "
+            f"got {captured['author_result']!r}"
+        )
+        assert captured["author_result"]["proposal_id"] == "prop-x", (
+            "author_failed result must carry the proposal_id so the renderer "
+            "and decision recorder can attribute it"
+        )
+        assert result["status"] == "complete_with_errors", (
+            "An author Claude-runner failure must drive the run to "
+            f"complete_with_errors; got {result['status']!r}"
+        )
+        assert "errors" in result
+        assert any("author" in e.lower() for e in result["errors"]), (
+            f"author error must show up in result['errors']: {result['errors']!r}"
+        )
+
+    def test_author_unexpected_exception_does_not_crash_run(
+        self, tmp_path: Path,
+    ) -> None:
+        """Belt-and-suspenders: any non-AuthorError, non-ClaudeRunnerError
+        exception out of author_agent must also degrade to author_failed
+        with the proposal_id preserved."""
+        _init_git_repo(tmp_path)
+        _setup_kb(tmp_path)
+
+        cmd = ReviewCommand(
+            repo=tmp_path, date_range="last 7 days", verbose=False,
+        )
+
+        with patch("claude_reflect.cli.author_agent") as mock_author, \
+             patch.object(cmd, "_make_run_loop") as mock_make:
+            # Deliberately not AuthorError/ClaudeRunnerError.
+            mock_author.side_effect = RuntimeError("disk gone weird")
+
+            captured = {}
+
+            def fake_run():
+                proposal = {"proposal_id": "prop-y", "title": "y"}
+                captured["author_result"] = cmd._real_author(proposal, tmp_path)
+                state = MagicMock()
+                state.status = "complete"
+                state.decisions = []
+                state.run_id = "run-author-unexpected"
+                state.proposal_batch = {"proposals": [proposal]}
+                return state
+
+            mock_loop = MagicMock()
+            mock_loop.run.side_effect = fake_run
+            mock_make.return_value = mock_loop
+
+            result = cmd.execute()
+
+        assert captured["author_result"]["status"] == "author_failed"
+        assert captured["author_result"]["proposal_id"] == "prop-y"
+        assert "RuntimeError" in captured["author_result"]["author_failure_reason"]
+        assert result["status"] == "complete_with_errors"
+
+    def test_one_author_failure_does_not_block_other_proposals(
+        self, tmp_path: Path,
+    ) -> None:
+        """Regression guard. Cascade isolation: a ClaudeRunnerError on
+        proposal A must not prevent the author wrapper from running cleanly
+        on proposal B. The renderer must see results for both."""
+        _init_git_repo(tmp_path)
+        _setup_kb(tmp_path)
+
+        cmd = ReviewCommand(
+            repo=tmp_path, date_range="last 7 days", verbose=False,
+        )
+
+        call_count = {"n": 0}
+
+        def author_side_effect(proposal, repo, model=None, **kwargs):
+            call_count["n"] += 1
+            if proposal["proposal_id"] == "prop-fails":
+                raise ClaudeRunnerError("transient")
+            return {
+                "status": "success",
+                "proposal_id": proposal["proposal_id"],
+                "diff_reference": "fake-branch",
+                "files_touched": ["x.py"],
+            }
+
+        with patch("claude_reflect.cli.author_agent", side_effect=author_side_effect), \
+             patch.object(cmd, "_make_run_loop") as mock_make:
+
+            captured = {}
+
+            def fake_run():
+                results = {}
+                for pid in ("prop-fails", "prop-succeeds"):
+                    results[pid] = cmd._real_author(
+                        {"proposal_id": pid, "title": pid}, tmp_path,
+                    )
+                captured["results"] = results
+                state = MagicMock()
+                state.status = "complete"
+                state.decisions = []
+                state.run_id = "run-cascade"
+                state.proposal_batch = {
+                    "proposals": [
+                        {"proposal_id": "prop-fails"},
+                        {"proposal_id": "prop-succeeds"},
+                    ],
+                }
+                return state
+
+            mock_loop = MagicMock()
+            mock_loop.run.side_effect = fake_run
+            mock_make.return_value = mock_loop
+
+            cmd.execute()
+
+        assert call_count["n"] == 2, (
+            f"Both author invocations must execute; the first failure must "
+            f"not short-circuit the batch. Got {call_count['n']} call(s)."
+        )
+        assert captured["results"]["prop-fails"]["status"] == "author_failed"
+        assert captured["results"]["prop-succeeds"]["status"] == "success", (
+            "prop-succeeds must run cleanly even after prop-fails raised"
+        )
+
     def test_clean_run_keeps_complete_status(self, tmp_path: Path) -> None:
         """The complete_with_errors signalling must NOT fire on a clean run."""
         _init_git_repo(tmp_path)
