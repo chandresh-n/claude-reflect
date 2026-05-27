@@ -690,3 +690,110 @@ def test_orchestrator_stage_3_failure_isolates_to_one_session(
     assert runner.calls_by_stage["4"] >= 1, (
         "stage 4 must still attempt to run after a per-session stage-3 failure"
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase-3: parallel sessions for stages 1b/2/3
+# ---------------------------------------------------------------------------
+
+
+def test_orchestrator_session_parallelism_preserves_output_set(
+    tmp_path: Path,
+) -> None:
+    """With max_concurrent_sessions > 1, sessions run on a thread pool
+    but the aggregated output must contain exactly the same per-session
+    data as a sequential run. ex.map preserves submission order so
+    narratives_all stays in session-list order across runs."""
+    from claude_reflect.agents.pipeline.orchestrator import evaluate
+
+    sessions = [_make_session(f"s{i}", n_turns=3) for i in range(4)]
+    runner = StageDispatchRunner()
+
+    out = evaluate(
+        sessions=sessions, repo=tmp_path, model="m",
+        runner=runner, max_concurrent_sessions=4,
+    )
+
+    narrative_ids = [n["session_id"] for n in out["session_narratives"]]
+    assert narrative_ids == [s.session_id for s in sessions], (
+        f"narratives_all must be in submission order; got {narrative_ids!r}"
+    )
+    assert len(out["per_turn_observations"]) == 12
+    assert len(out["pass_classifications"]) == 4
+    assert runner.calls_by_stage["4"] == 1
+
+
+def test_orchestrator_session_parallelism_respects_max_concurrent(
+    tmp_path: Path,
+) -> None:
+    """max_concurrent_sessions=N must cap concurrent per-session
+    pipelines at N. We instrument the dispatch runner to track
+    concurrent stage-1b calls (the first per-session stage in the
+    parallel block) and assert the observed peak never exceeds the
+    configured ceiling."""
+    import threading
+    import time
+
+    from claude_reflect.agents.pipeline.orchestrator import evaluate
+
+    n_sessions = 8
+    ceiling = 3
+    sessions = [_make_session(f"s{i}", n_turns=2) for i in range(n_sessions)]
+
+    in_flight = 0
+    peak = 0
+    lock = threading.Lock()
+
+    class InstrumentedRunner(StageDispatchRunner):
+        def invoke(self, *, system_prompt, user_prompt, model, **kw):
+            nonlocal in_flight, peak
+            stage = self.classify(system_prompt)
+            if stage == "1b":
+                with lock:
+                    in_flight += 1
+                    peak = max(peak, in_flight)
+                time.sleep(0.05)
+                with lock:
+                    in_flight -= 1
+            return super().invoke(
+                system_prompt=system_prompt, user_prompt=user_prompt,
+                model=model, **kw,
+            )
+
+    runner = InstrumentedRunner()
+    evaluate(
+        sessions=sessions, repo=tmp_path, model="m",
+        runner=runner, max_concurrent_sessions=ceiling,
+    )
+
+    assert peak <= ceiling, (
+        f"max_concurrent_sessions={ceiling} but observed {peak} "
+        f"concurrent stage-1b calls"
+    )
+    assert peak > 1, (
+        f"max_concurrent_sessions={ceiling} but pool never ran more "
+        f"than 1 session concurrently — parallelism not exercised"
+    )
+
+
+def test_orchestrator_sequential_default_unchanged(tmp_path: Path) -> None:
+    """Sequential default (max_concurrent_sessions=1) must produce
+    output structurally identical to the pre-Phase-3 code."""
+    from claude_reflect.agents.pipeline.orchestrator import evaluate
+
+    sessions = [_make_session("s1", n_turns=2),
+                _make_session("s2", n_turns=2)]
+    runner = StageDispatchRunner()
+
+    out = evaluate(
+        sessions=sessions, repo=tmp_path, model="m", runner=runner,
+        max_concurrent_sessions=1,
+    )
+
+    assert set(out.keys()) == {
+        "per_turn_observations", "pass_classifications",
+        "gap_observations", "session_narratives",
+    }
+    assert [n["session_id"] for n in out["session_narratives"]] == ["s1", "s2"]
+    assert len(out["per_turn_observations"]) == 4
+

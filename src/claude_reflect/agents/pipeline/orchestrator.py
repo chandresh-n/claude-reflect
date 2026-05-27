@@ -74,6 +74,7 @@ def evaluate(
     log_dir: Optional[Path] = None,
     stage_1a_model: Optional[str] = None,
     max_concurrent_turn_descriptions: int = 1,
+    max_concurrent_sessions: int = 1,
 ) -> dict:
     """Run the staged evaluator pipeline over ``sessions``.
 
@@ -92,6 +93,12 @@ def evaluate(
             describer out to a bounded thread pool. Results are
             re-ordered by turn_index before returning so downstream
             stages always see temporal sequence.
+        max_concurrent_sessions: Ceiling on parallel session pipelines
+            (stages 1a → 1b → 2 → 3). Each session's pipeline runs
+            sequentially internally; sessions run concurrently. Stage 4
+            (corpus-level) remains serial because it must see every
+            session's output. Worst-case process fanout is
+            max_concurrent_sessions * max_concurrent_turn_descriptions.
     """
     if runner is None:
         runner = ClaudeCLIRunner()
@@ -108,7 +115,16 @@ def evaluate(
     pass_classifications_all: list[dict] = []
     narratives_all: list[dict] = []
 
-    for session in sessions:
+    def _process_session(session: Session) -> tuple[list, list, dict]:
+        """Run stages 1a → 1b → 2 → 3 for a single session. Returns
+        (session_observations, classifications, narrative). Closes
+        over the outer scope's runner/repo/model parameters so the
+        per-session worker stays a pure function of `session`.
+
+        Internally sequential: 1b depends on 1a, 2 depends on 1b,
+        3 depends on 2. Stage 4 (corpus-level) runs once after every
+        session has finished here, so this helper never touches it.
+        """
         sid = session.session_id
 
         # --- Stage 1a: per-turn description (per-turn failure isolated)
@@ -158,8 +174,6 @@ def evaluate(
             "failed_windows": windowed.get("failed_windows", []),
         })
 
-        per_turn_observations_all.extend(session_observations)
-
         # --- Stage 2: per-session pass refinement
         # Skip the model call when there are no drafts (1b fully failed)
         # — there is nothing for the refiner to refine.
@@ -186,7 +200,6 @@ def evaluate(
                 )
         else:
             classifications = []
-        pass_classifications_all.extend(classifications)
         _write_stage_artefact(stages_dir, "2", sid, {
             "session_id": sid,
             "pass_count": len(classifications),
@@ -221,12 +234,30 @@ def evaluate(
                 file=sys.stderr,
                 flush=True,
             )
-        narratives_all.append(narrative)
         _write_stage_artefact(stages_dir, "3", sid, {
             "session_id": sid,
             "partial_completion": partial_completion,
             "error": stage_3_error,
         })
+
+        return session_observations, classifications, narrative
+
+    # Dispatch the per-session work either sequentially (default) or
+    # in a bounded thread pool. ex.map preserves submission order so
+    # the aggregated lists are deterministic across runs even when the
+    # underlying calls return out of order.
+    if max_concurrent_sessions <= 1 or len(sessions) <= 1:
+        session_outputs = [_process_session(s) for s in sessions]
+    else:
+        from concurrent.futures import ThreadPoolExecutor
+        workers = min(max_concurrent_sessions, len(sessions))
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            session_outputs = list(ex.map(_process_session, sessions))
+
+    for session_observations, classifications, narrative in session_outputs:
+        per_turn_observations_all.extend(session_observations)
+        pass_classifications_all.extend(classifications)
+        narratives_all.append(narrative)
 
     # --- Stage 4: corpus-level gap observations + gap-record side effects
     stage_4_error: Optional[str] = None

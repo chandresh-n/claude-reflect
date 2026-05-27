@@ -410,6 +410,9 @@ class ReviewCommand:
                     max_concurrent_turn_descriptions=(
                         parallelism["max_concurrent_turn_descriptions"]
                     ),
+                    max_concurrent_sessions=(
+                        parallelism["max_concurrent_sessions"]
+                    ),
                 )
                 gaps = result.get("gap_observations", [])
                 self._log(f"Evaluator found {len(gaps)} gap observation(s).")

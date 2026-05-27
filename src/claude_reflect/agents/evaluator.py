@@ -29,6 +29,7 @@ def evaluate(
     log_dir: Optional[Path] = None,
     stage_1a_model: Optional[str] = None,
     max_concurrent_turn_descriptions: int = 1,
+    max_concurrent_sessions: int = 1,
     **_unused,
 ) -> dict:
     """Run the staged evaluator pipeline over the given sessions.
@@ -56,6 +57,7 @@ def evaluate(
         model=model,
         stage_1a_model=stage_1a_model,
         max_concurrent_turn_descriptions=max_concurrent_turn_descriptions,
+        max_concurrent_sessions=max_concurrent_sessions,
         write_gap_records=write_gap_records,
         log_dir=log_dir,
     )
