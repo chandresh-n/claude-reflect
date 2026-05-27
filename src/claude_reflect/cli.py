@@ -31,6 +31,7 @@ from claude_reflect.storage.knowledge_base import setup as kb_setup
 from claude_reflect.storage.session_logs import SessionLogReader
 from claude_reflect.agents.evaluator import evaluate, EvaluatorError
 from claude_reflect.agents.proposer import propose, ProposerError
+from claude_reflect.agents.proposer_validator import coerce_proposal_batch
 from claude_reflect.agents.author import author as author_agent, AuthorError
 from claude_reflect.agents.claude_runner import ClaudeRunnerError
 from claude_reflect.processes.run_loop import RunLoop, RunState, RunLoopError
@@ -422,9 +423,28 @@ class ReviewCommand:
                     forced_novelty_probability=fn_config.get("probability", 0.20),
                     null_baseline_probability=fn_config.get("null_baseline_probability", 0.01),
                 )
-                count = len(result.get("proposals", []))
+                # Schema-enforce: coerce common shape drifts (string-typed
+                # sections, missing proposal_id, etc.) into the canonical
+                # form. Proposals that cannot be coerced are dropped; both
+                # repairs and drops surface as stage_errors so the run
+                # reports complete_with_errors when shape drift happened.
+                coercion = coerce_proposal_batch(result)
+                stage_messages = coercion.summary_for_stage_errors()
+                if stage_messages:
+                    self._stage_errors.extend(stage_messages)
+                if coercion.dropped_count:
+                    self._log(
+                        f"Proposer schema-drop: {coercion.dropped_count} "
+                        f"proposal(s) discarded after coercion failed."
+                    )
+                if coercion.repairs_by_proposal:
+                    self._log(
+                        f"Proposer schema-repair: {len(coercion.repairs_by_proposal)} "
+                        f"proposal(s) needed one-pass normalisation."
+                    )
+                count = len(coercion.batch.get("proposals", []))
                 self._log(f"Proposer generated {count} proposal(s).")
-                return result
+                return coercion.batch
             except ProposerError as e:
                 self._stage_errors.append(f"proposer: {e}")
                 self._log(f"Proposer error: {e}")
