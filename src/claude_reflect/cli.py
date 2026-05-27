@@ -379,6 +379,11 @@ class ReviewCommand:
         evaluator_model = config["models"]["evaluator"]
         proposer_model = config["models"]["proposer"]
         author_model = config["models"]["author"]
+        # stage_1a falls back to the evaluator model for old configs that
+        # predate the c5+phase-1 split.
+        stage_1a_model = config["models"].get("stage_1a", evaluator_model)
+        # Resolved parallelism (defaults silently merged in).
+        parallelism = _resolve_parallelism(config)
         verbose = self.verbose
         repo = self.repo
 
@@ -401,6 +406,7 @@ class ReviewCommand:
                     sessions,
                     repo,
                     model=evaluator_model,
+                    stage_1a_model=stage_1a_model,
                 )
                 gaps = result.get("gap_observations", [])
                 self._log(f"Evaluator found {len(gaps)} gap observation(s).")
@@ -749,18 +755,58 @@ def _load_config(repo: Path) -> dict:
 # Current Claude model defaults. The picker (and a non-TTY fall-through)
 # both use these when the user's config.yaml has no models section.
 # Bump these when a new model family ships.
+#
+# stage_1a is split out from the rest of the evaluator because it runs
+# once per turn (often hundreds of calls per review) and is a bounded
+# "describe what happened in this single turn" task — a smaller, cheaper
+# model is plausibly fine here. The conservative default is Sonnet pending
+# the Phase-4 calibration that compares Haiku vs Sonnet vs Opus output on
+# the fixture corpus; users can pick Haiku in the picker today if they
+# want to gamble on cost.
 _DEFAULT_MODELS = {
+    "stage_1a": "claude-sonnet-4-6",
     "evaluator": "claude-opus-4-7",
     "proposer": "claude-opus-4-7",
     "author": "claude-sonnet-4-6",
 }
 
 
+# Iteration order matters: this is the order the picker asks in. Pipeline
+# order (stage_1a runs first → evaluator (1b/2/3/4) → proposer → author)
+# keeps the prompt feeling like a walk through the run, not a random list.
 _AGENT_DESCRIPTIONS = {
-    "evaluator": "reads sessions, identifies patterns",
+    "stage_1a": "per-turn description (high-volume, parallelizable)",
+    "evaluator": "session synthesis + cross-session gaps (stages 1b/2/3/4)",
     "proposer": "drafts changes (deepest reasoning)",
     "author": "writes git diffs",
 }
+
+
+# Concurrency ceilings. cli is the source-of-truth for these defaults;
+# knowledge_base._DEFAULT_CONFIG carries the same numbers only so a fresh
+# config.yaml documents the knobs for a human reader.
+_DEFAULT_PARALLELISM = {
+    "max_concurrent_sessions": 4,
+    "max_concurrent_turn_descriptions": 8,
+}
+
+
+def _resolve_parallelism(config: dict) -> dict:
+    """Resolve parallelism settings with per-key fallback to defaults.
+
+    Missing keys fall back individually so a user who only overrides
+    one ceiling doesn't accidentally lose the other.
+    """
+    section = config.get("parallelism") or {}
+    if not isinstance(section, dict):
+        section = {}
+    out = dict(_DEFAULT_PARALLELISM)
+    for k, default in _DEFAULT_PARALLELISM.items():
+        v = section.get(k, default)
+        if not isinstance(v, int) or v < 1:
+            v = default
+        out[k] = v
+    return out
 
 
 def _prompt_for_models(current: dict) -> dict:

@@ -31,6 +31,20 @@ import yaml
 # skipped silently. Once chosen, the models section is persisted here
 # and the picker doesn't fire again unless --pick-models is passed.
 _DEFAULT_CONFIG: dict = {
+    # Concurrency caps for the evaluator pipeline. Two ceilings, applied
+    # independently:
+    #   - max_concurrent_sessions: how many sessions' 1b/2/3 pipelines run
+    #     simultaneously. Stage 4 (corpus) is always serial regardless.
+    #   - max_concurrent_turn_descriptions: how many stage-1a per-turn
+    #     calls run simultaneously WITHIN one session. Worst-case process
+    #     fanout is max_concurrent_sessions * max_concurrent_turn_descriptions.
+    # See cli._DEFAULT_PARALLELISM for the source-of-truth defaults; this
+    # entry only exists so a fresh repo's config.yaml documents the knobs
+    # to a reader who opens the file.
+    "parallelism": {
+        "max_concurrent_sessions": 4,
+        "max_concurrent_turn_descriptions": 8,
+    },
     "maintenance": {
         "trigger_thresholds": {
             "new_sessions": 10,

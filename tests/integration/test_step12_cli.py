@@ -680,29 +680,136 @@ class TestModelPicker:
     ) -> None:
         """--pick-models must re-prompt even when config already has a
         models section, so users can update their selection."""
-        from claude_reflect.cli import _resolve_models
+        from claude_reflect.cli import _resolve_models, _AGENT_DESCRIPTIONS
         _init_git_repo(tmp_path)
         _setup_kb(tmp_path)
 
         monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-        # Pretend the user types specific custom values.
-        answers = iter(["custom-eval", "custom-proposer", "custom-author"])
+        # Pretend the user types a custom value for every agent. The
+        # picker iterates _AGENT_DESCRIPTIONS in insertion order, so
+        # the answers must match that ordering.
+        agent_keys = list(_AGENT_DESCRIPTIONS.keys())
+        answers = iter(f"custom-{a}" for a in agent_keys)
         monkeypatch.setattr("builtins.input", lambda _p: next(answers))
 
-        config = {"models": {
-            "evaluator": "old-eval",
-            "proposer": "old-proposer",
-            "author": "old-author",
-        }}
+        config = {"models": {a: f"old-{a}" for a in agent_keys}}
         models = _resolve_models(
             tmp_path, config, pick_models=True, log=lambda _m: None,
         )
 
-        assert models == {
-            "evaluator": "custom-eval",
-            "proposer": "custom-proposer",
-            "author": "custom-author",
+        assert models == {a: f"custom-{a}" for a in agent_keys}, (
+            f"picker must update every agent's model from the user's "
+            f"answers; got {models!r}"
+        )
+
+
+class TestParallelismResolution:
+    """Phase-1 plumbing for c-phase-2/3: parallelism ceilings resolved
+    from config with sane per-key fallbacks."""
+
+    def test_resolve_parallelism_returns_defaults_when_config_empty(self) -> None:
+        from claude_reflect.cli import _resolve_parallelism, _DEFAULT_PARALLELISM
+        out = _resolve_parallelism({})
+        assert out == _DEFAULT_PARALLELISM
+
+    def test_resolve_parallelism_per_key_fallback(self) -> None:
+        """User can override one ceiling without losing the other."""
+        from claude_reflect.cli import _resolve_parallelism, _DEFAULT_PARALLELISM
+        out = _resolve_parallelism({"parallelism": {"max_concurrent_sessions": 16}})
+        assert out["max_concurrent_sessions"] == 16
+        assert out["max_concurrent_turn_descriptions"] == (
+            _DEFAULT_PARALLELISM["max_concurrent_turn_descriptions"]
+        )
+
+    def test_resolve_parallelism_rejects_garbage_values(self) -> None:
+        """Non-int or sub-1 values must fall back to the default rather
+        than crash the run later when the value is fed to a thread-pool
+        max_workers argument."""
+        from claude_reflect.cli import _resolve_parallelism, _DEFAULT_PARALLELISM
+        out = _resolve_parallelism({"parallelism": {
+            "max_concurrent_sessions": -1,
+            "max_concurrent_turn_descriptions": "lots",
+        }})
+        assert out == _DEFAULT_PARALLELISM
+
+    def test_resolve_parallelism_handles_non_dict_section(self) -> None:
+        from claude_reflect.cli import _resolve_parallelism, _DEFAULT_PARALLELISM
+        out = _resolve_parallelism({"parallelism": "not a dict"})
+        assert out == _DEFAULT_PARALLELISM
+
+
+class TestStage1aModelWiring:
+    """Phase-1 plumbing: stage_1a model resolution + per-stage routing."""
+
+    def test_default_models_includes_stage_1a(self) -> None:
+        from claude_reflect.cli import _DEFAULT_MODELS
+        assert "stage_1a" in _DEFAULT_MODELS
+        assert isinstance(_DEFAULT_MODELS["stage_1a"], str)
+        assert _DEFAULT_MODELS["stage_1a"], "stage_1a default must be non-empty"
+
+    def test_agent_descriptions_order_puts_stage_1a_first(self) -> None:
+        """Pipeline order in the picker: stage_1a first so the picker
+        feels like a walk through the run."""
+        from claude_reflect.cli import _AGENT_DESCRIPTIONS
+        assert list(_AGENT_DESCRIPTIONS.keys())[0] == "stage_1a"
+
+    def test_old_config_without_stage_1a_falls_back_to_evaluator_model(
+        self, tmp_path: Path,
+    ) -> None:
+        """Users upgrading from c5 (pre-Phase-1) have a config with
+        models.{evaluator,proposer,author} but no models.stage_1a. The
+        cli must transparently use evaluator's model for stage 1a until
+        the user re-runs --pick-models."""
+        from claude_reflect.cli import ReviewCommand
+        _init_git_repo(tmp_path)
+        _setup_kb(tmp_path)
+        # Write a pre-Phase-1 config (no stage_1a).
+        import yaml
+        config_path = tmp_path / ".claude-reflect" / "config.yaml"
+        existing = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        existing["models"] = {
+            "evaluator": "old-evaluator",
+            "proposer": "old-proposer",
+            "author": "old-author",
         }
+        config_path.write_text(yaml.dump(existing), encoding="utf-8")
+
+        cmd = ReviewCommand(repo=tmp_path, date_range="last 7 days", verbose=False)
+
+        captured_evaluate_kwargs: dict = {}
+
+        def fake_evaluate(*args, **kwargs):
+            captured_evaluate_kwargs.update(kwargs)
+            return {
+                "per_turn_observations": [],
+                "pass_classifications": [],
+                "gap_observations": [],
+                "session_narratives": [],
+            }
+
+        with patch("claude_reflect.cli.evaluate", side_effect=fake_evaluate), \
+             patch.object(cmd, "_make_run_loop") as mock_make:
+
+            def fake_run():
+                # Drive the evaluator wrapper just like the run loop would.
+                cmd._real_evaluator(sessions=[MagicMock()], repo=tmp_path)
+                state = MagicMock()
+                state.status = "complete"
+                state.decisions = []
+                state.run_id = "run-fallback"
+                state.proposal_batch = {"proposals": []}
+                return state
+
+            mock_loop = MagicMock()
+            mock_loop.run.side_effect = fake_run
+            mock_make.return_value = mock_loop
+            cmd.execute()
+
+        # The cli should have fallen back stage_1a → evaluator model.
+        assert captured_evaluate_kwargs.get("stage_1a_model") == "old-evaluator", (
+            f"stage_1a_model must fall back to evaluator model when missing "
+            f"from config; got {captured_evaluate_kwargs!r}"
+        )
 
 
 class TestVerboseFlag:

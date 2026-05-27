@@ -72,15 +72,24 @@ def evaluate(
     runner: Optional[Runner] = None,
     write_gap_records: bool = True,
     log_dir: Optional[Path] = None,
+    stage_1a_model: Optional[str] = None,
 ) -> dict:
     """Run the staged evaluator pipeline over ``sessions``.
 
     Returns a document with exactly the four spec keys:
     ``per_turn_observations``, ``pass_classifications``,
     ``gap_observations``, ``session_narratives``.
+
+    Args:
+        model: Default model for every stage.
+        stage_1a_model: Optional override for stage 1a (per-turn
+            description), which runs once per turn and benefits from a
+            smaller, cheaper model. Falls back to ``model`` if None.
     """
     if runner is None:
         runner = ClaudeCLIRunner()
+    if stage_1a_model is None:
+        stage_1a_model = model
 
     if log_dir is None:
         run_ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
@@ -97,7 +106,7 @@ def evaluate(
 
         # --- Stage 1a: per-turn description (per-turn failure isolated)
         descriptions = describe_session_turns(
-            session=session, runner=runner, repo=repo, model=model,
+            session=session, runner=runner, repo=repo, model=stage_1a_model,
         )
         stage_1a_failures = [
             d for d in descriptions

@@ -27,6 +27,7 @@ def evaluate(
     model: str = "claude-opus-4-7",
     write_gap_records: bool = True,
     log_dir: Optional[Path] = None,
+    stage_1a_model: Optional[str] = None,
     **_unused,
 ) -> dict:
     """Run the staged evaluator pipeline over the given sessions.
@@ -35,10 +36,16 @@ def evaluate(
     (``per_turn_observations``, ``pass_classifications``,
     ``gap_observations``, ``session_narratives``).
 
+    Args:
+        model: Model used for stages 1b/2/3/4. Treated as the default
+            for stage 1a too when ``stage_1a_model`` is not supplied.
+        stage_1a_model: Optional override for stage 1a (per-turn
+            description). Stage 1a runs once per turn so it benefits
+            from a smaller, cheaper model when corpus volume is high.
+
     Extra keyword arguments are accepted and ignored so older callers
     that passed pre-pipeline batch knobs do not break at the import
-    boundary. The supported runtime knobs are ``model``,
-    ``write_gap_records``, and ``log_dir``.
+    boundary.
     """
     if not sessions:
         raise EvaluatorError("No sessions provided for evaluation")
@@ -46,6 +53,7 @@ def evaluate(
         sessions=sessions,
         repo=repo,
         model=model,
+        stage_1a_model=stage_1a_model,
         write_gap_records=write_gap_records,
         log_dir=log_dir,
     )
@@ -56,9 +64,12 @@ def evaluate_from_jsonl(
     repo: Path,
     model: str = "claude-opus-4-7",
     write_gap_records: bool = True,
+    stage_1a_model: Optional[str] = None,
 ) -> dict:
     """Read JSONL session logs from disk and evaluate them."""
     sessions = [SessionLogReader.read_session(p) for p in session_paths]
     return evaluate(
-        sessions, repo, model=model, write_gap_records=write_gap_records,
+        sessions, repo, model=model,
+        write_gap_records=write_gap_records,
+        stage_1a_model=stage_1a_model,
     )
