@@ -591,6 +591,105 @@ class TestProposalBatchMarkdown:
                 f"Decorative pattern {pattern!r} in empty batch markdown: {matches}"
             )
 
+    def test_batch_markdown_tolerates_string_typed_sections(
+        self, tmp_path: Path,
+    ) -> None:
+        """Regression guard. The proposer occasionally returns a section
+        (``why`` / ``what`` / ``how`` / ``prediction``) as a plain string
+        instead of a ``{field: prose}`` dict. The renderer must not raise
+        AttributeError on that shape — it must surface the string as the
+        section's prose so the user still sees the proposer's words.
+
+        Surfaced by fixture-driven E2E run on 2026-05-27 (cli.py crash on
+        a real proposer output where ``how`` was a string).
+        """
+        from claude_reflect.cli import render_proposal_batch_markdown
+
+        # A proposal whose every section is a string (worst case).
+        proposal_all_string = {
+            "proposal_id": "prop-str",
+            "title": "All sections as strings",
+            "why": "We saw a recurring loop pattern in the session.",
+            "what": "Add a stop-after-success rule to CLAUDE.md.",
+            "how": "Append three lines to CLAUDE.md under the 'When to stop' section.",
+            "prediction": "Loop sessions should drop by 60% next week.",
+        }
+        # A proposal whose sections are the spec-shaped dicts (sanity check).
+        proposal_dict = _make_proposal("prop-dict", "Properly shaped proposal")
+        # A proposal mixing the two shapes section-by-section.
+        proposal_mixed = {
+            "proposal_id": "prop-mix",
+            "title": "Mixed section shapes",
+            "why": {"prose_summary": "dict-shaped why"},
+            "what": "string-shaped what",
+            "how": {"mechanism_prose": "dict-shaped how"},
+            "prediction": "string-shaped prediction",
+        }
+
+        markdown = render_proposal_batch_markdown(
+            run_id="run-mix",
+            date_range={"start": "2026-05-25", "end": "2026-05-25"},
+            proposals=[proposal_all_string, proposal_dict, proposal_mixed],
+            author_results={
+                "prop-str": {"status": "success"},
+                "prop-dict": {"status": "success"},
+                "prop-mix": {"status": "success"},
+            },
+        )
+
+        # No crash got us this far. Verify the string-typed prose actually
+        # made it into the output for each section.
+        assert "We saw a recurring loop pattern" in markdown, (
+            "string-typed 'why' must be surfaced as the why prose"
+        )
+        assert "Add a stop-after-success rule" in markdown, (
+            "string-typed 'what' must be surfaced as the what description"
+        )
+        assert "Append three lines to CLAUDE.md" in markdown, (
+            "string-typed 'how' must be surfaced as the how prose (this is the "
+            "exact field that crashed the renderer pre-fix)"
+        )
+        assert "Loop sessions should drop by 60%" in markdown, (
+            "string-typed 'prediction' must be surfaced as the prediction prose"
+        )
+        # Mixed-shape proposal must surface both dict-shaped and string-shaped.
+        assert "dict-shaped why" in markdown
+        assert "string-shaped what" in markdown
+        assert "dict-shaped how" in markdown
+        assert "string-shaped prediction" in markdown
+
+    def test_batch_markdown_tolerates_string_section_on_author_failed(
+        self, tmp_path: Path,
+    ) -> None:
+        """Same defensive shape needed on the author-failed code path,
+        which has its own (smaller) set of section reads."""
+        from claude_reflect.cli import render_proposal_batch_markdown
+
+        proposal = {
+            "proposal_id": "prop-fail",
+            "title": "Failed with string sections",
+            "why": "saw a thing",
+            "what": "tried a thing",
+            "how": "via a thing",
+            "prediction": "expects a thing",
+        }
+        markdown = render_proposal_batch_markdown(
+            run_id="run-test",
+            date_range={"start": "2026-05-25", "end": "2026-05-25"},
+            proposals=[proposal],
+            author_results={
+                "prop-fail": {
+                    "status": "author_failed",
+                    "author_failure_reason": "no diff produced",
+                },
+            },
+        )
+
+        assert "AUTHOR FAILED" in markdown
+        assert "saw a thing" in markdown
+        assert "tried a thing" in markdown
+        assert "no diff produced" in markdown
+
 
 # ---------------------------------------------------------------------------
 # 6. CLI entry point (main function / argparse)

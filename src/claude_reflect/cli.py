@@ -41,6 +41,28 @@ from claude_reflect.processes.run_loop import RunLoop, RunState, RunLoopError
 # ---------------------------------------------------------------------------
 
 
+def _proposal_section_field(
+    proposal: dict, section: str, field: str, default: str = "",
+) -> str:
+    """Read ``proposal[section][field]`` defensively.
+
+    The proposer is supposed to return each section (``why``, ``what``,
+    ``how``, ``prediction``) as a dict — but in practice it occasionally
+    returns a section as a plain string. The renderer must not crash on
+    that variant. When the section IS a string, treat it as the prose
+    content for whichever field the caller is asking about so the user
+    still sees the proposer's words instead of an empty line.
+    """
+    value = proposal.get(section)
+    if isinstance(value, dict):
+        out = value.get(field, default)
+        # The dict's field can itself be non-string (e.g. None); coerce.
+        return str(out) if out is not None else default
+    if isinstance(value, str):
+        return value
+    return default
+
+
 def render_proposal_batch_markdown(
     *,
     run_id: str,
@@ -87,10 +109,10 @@ def render_proposal_batch_markdown(
             reason = ar.get("author_failure_reason", "Unknown reason")
             lines.append(f"## Proposal {i} of {total}: {title}. AUTHOR FAILED")
             lines.append("")
-            why_prose = proposal.get("why", {}).get("prose_summary", "")
+            why_prose = _proposal_section_field(proposal, "why", "prose_summary")
             lines.append(f"**Why this was proposed:** {why_prose}")
             lines.append("")
-            what_desc = proposal.get("what", {}).get("short_description", "")
+            what_desc = _proposal_section_field(proposal, "what", "short_description")
             lines.append(f"**What was attempted:** {what_desc}")
             lines.append("")
             lines.append(f"**Why it could not be produced:** {reason}")
@@ -104,22 +126,21 @@ def render_proposal_batch_markdown(
             lines.append(f"## Proposal {i} of {total}: {title}")
             lines.append("")
 
-            why_prose = proposal.get("why", {}).get("prose_summary", "")
+            why_prose = _proposal_section_field(proposal, "why", "prose_summary")
             lines.append(f"**Why:** {why_prose}")
             lines.append("")
 
-            what = proposal.get("what", {})
-            what_desc = what.get("short_description", "")
-            diff_ref = what.get("diff_reference", "")
+            what_desc = _proposal_section_field(proposal, "what", "short_description")
+            diff_ref = _proposal_section_field(proposal, "what", "diff_reference")
             lines.append(f"**What:** {what_desc}, see diff: {diff_ref}")
             lines.append("")
 
-            how_prose = proposal.get("how", {}).get("mechanism_prose", "")
+            how_prose = _proposal_section_field(proposal, "how", "mechanism_prose")
             lines.append(f"**How:** {how_prose}")
             lines.append("")
 
-            pred_prose = proposal.get("prediction", {}).get(
-                "expected_impact_prose", ""
+            pred_prose = _proposal_section_field(
+                proposal, "prediction", "expected_impact_prose"
             )
             lines.append(f"**Prediction:** {pred_prose}")
             lines.append("")
