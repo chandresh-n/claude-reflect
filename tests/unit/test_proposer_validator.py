@@ -192,10 +192,12 @@ def test_batch_coercion_keeps_recoverable_drops_unrecoverable() -> None:
     assert any("how" in r for r in out.repairs_by_proposal["prop-002"])
 
 
-def test_batch_coercion_summary_messages() -> None:
-    """summary_for_stage_errors emits one informational line per repair
-    set and one per drop, ready to be appended to ReviewCommand's
-    _stage_errors list so the run reports complete_with_errors."""
+def test_batch_coercion_warnings_and_errors_are_segregated() -> None:
+    """Repairs and drops must surface through DIFFERENT channels:
+    repairs → summary_for_stage_warnings (advisory, output kept),
+    drops → summary_for_stage_errors (real lost output). A repaired
+    proposal must NOT appear in the errors channel and a dropped one
+    must NOT appear in the warnings channel."""
     raw = {
         "proposals": [
             {**_well_formed_proposal(), "proposal_id": "prop-r", "how": "str how"},
@@ -203,13 +205,23 @@ def test_batch_coercion_summary_messages() -> None:
         ],
     }
     out = coerce_proposal_batch(raw)
-    msgs = out.summary_for_stage_errors()
+    warnings = out.summary_for_stage_warnings()
+    errors = out.summary_for_stage_errors()
 
-    assert any("repaired prop-r" in m for m in msgs), (
-        f"expected a 'repaired prop-r' message; got {msgs!r}"
+    # Repair shows up only as a warning.
+    assert any("repaired prop-r" in m for m in warnings), (
+        f"expected 'repaired prop-r' in warnings; got {warnings!r}"
     )
-    assert any("dropped prop-d" in m for m in msgs), (
-        f"expected a 'dropped prop-d' message; got {msgs!r}"
+    assert not any("prop-r" in m for m in errors), (
+        f"repaired proposal must NOT appear in errors; got {errors!r}"
+    )
+
+    # Drop shows up only as an error.
+    assert any("dropped prop-d" in m for m in errors), (
+        f"expected 'dropped prop-d' in errors; got {errors!r}"
+    )
+    assert not any("prop-d" in m for m in warnings), (
+        f"dropped proposal must NOT appear in warnings; got {warnings!r}"
     )
 
 

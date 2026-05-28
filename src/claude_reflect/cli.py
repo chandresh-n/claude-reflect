@@ -389,9 +389,13 @@ class ReviewCommand:
 
         _empty_eval = {"per_turn_observations": [], "pass_classifications": [], "gap_observations": [], "session_narratives": []}
 
-        # Track stage failures so the final result reports them honestly
-        # instead of looking like a clean "complete, 0 decisions" run.
+        # Track stage failures (real lost work) and warnings (advisory:
+        # we fixed it, FYI) separately. Only errors flip the run status
+        # to complete_with_errors; warnings are informational so a clean
+        # run that merely repaired some proposer shape drift still reads
+        # as "complete".
         self._stage_errors: List[str] = []
+        self._stage_warnings: List[str] = []
 
         def real_evaluator(sessions, repo, **kwargs):
             if not sessions:
@@ -455,13 +459,15 @@ class ReviewCommand:
                 )
                 # Schema-enforce: coerce common shape drifts (string-typed
                 # sections, missing proposal_id, etc.) into the canonical
-                # form. Proposals that cannot be coerced are dropped; both
-                # repairs and drops surface as stage_errors so the run
-                # reports complete_with_errors when shape drift happened.
+                # form. Repairs are advisory (kept proposal, fixed shape) →
+                # warnings. Drops are real lost output → errors.
                 coercion = coerce_proposal_batch(result)
-                stage_messages = coercion.summary_for_stage_errors()
-                if stage_messages:
-                    self._stage_errors.extend(stage_messages)
+                repair_msgs = coercion.summary_for_stage_warnings()
+                drop_msgs = coercion.summary_for_stage_errors()
+                if repair_msgs:
+                    self._stage_warnings.extend(repair_msgs)
+                if drop_msgs:
+                    self._stage_errors.extend(drop_msgs)
                 if coercion.dropped_count:
                     self._log(
                         f"Proposer schema-drop: {coercion.dropped_count} "
@@ -470,7 +476,7 @@ class ReviewCommand:
                 if coercion.repairs_by_proposal:
                     self._log(
                         f"Proposer schema-repair: {len(coercion.repairs_by_proposal)} "
-                        f"proposal(s) needed one-pass normalisation."
+                        f"proposal(s) needed one-pass normalisation (advisory)."
                     )
                 count = len(coercion.batch.get("proposals", []))
                 self._log(f"Proposer generated {count} proposal(s).")
@@ -549,10 +555,11 @@ class ReviewCommand:
         run_loop = self._make_run_loop()
         state = run_loop.run()
 
-        # If any stage logged a transient/agent error, mark the run as
-        # degraded so callers (humans, CI, scripts) can tell the difference
-        # between "ran clean with no proposals" and "ran but lost data".
-        # Stage caches are intact, so re-running picks up where this left off.
+        # Only real errors (lost work) flip the status to
+        # complete_with_errors so callers can tell "ran clean" from "ran
+        # but lost data". Warnings are advisory (e.g. proposer shape
+        # drift we repaired) and never change the status. Stage caches
+        # are intact, so re-running picks up where this left off.
         final_status = state.status
         if self._stage_errors:
             final_status = "complete_with_errors"
@@ -563,6 +570,11 @@ class ReviewCommand:
             )
         else:
             self._log(f"Run {state.run_id} completed with status: {state.status}")
+        if self._stage_warnings:
+            self._log(
+                f"({len(self._stage_warnings)} advisory warning(s) — see "
+                f"'warnings' in the result; these did not affect output.)"
+            )
 
         result_dict: Dict[str, Any] = {
             "run_id": state.run_id,
@@ -571,6 +583,8 @@ class ReviewCommand:
         }
         if self._stage_errors:
             result_dict["errors"] = list(self._stage_errors)
+        if self._stage_warnings:
+            result_dict["warnings"] = list(self._stage_warnings)
         return result_dict
 
     def _make_run_loop(self) -> RunLoop:

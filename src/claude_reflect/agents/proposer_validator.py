@@ -71,15 +71,29 @@ class BatchCoercionResult:
     def dropped_count(self) -> int:
         return len(self.drops)
 
-    def summary_for_stage_errors(self) -> list[str]:
-        """One stage-error string per repair set + drop, ready to be
-        appended to ReviewCommand._stage_errors so the run reports
-        complete_with_errors when shape drift was encountered."""
+    def summary_for_stage_warnings(self) -> list[str]:
+        """One advisory string per repaired proposal.
+
+        Repairs are NOT errors: the proposal was kept and its output is
+        usable; the validator just normalised a shape drift (e.g. a
+        string-typed section). These feed ReviewCommand._stage_warnings
+        and do NOT flip the run status to complete_with_errors.
+        """
         out: list[str] = []
         for pid, repairs in self.repairs_by_proposal.items():
             if repairs:
                 joined = "; ".join(repairs)
                 out.append(f"proposer (repaired {pid}): {joined}")
+        return out
+
+    def summary_for_stage_errors(self) -> list[str]:
+        """One error string per dropped proposal.
+
+        A drop means the proposal was unrecoverable and removed from the
+        batch — real lost output. These feed ReviewCommand._stage_errors
+        and DO flip the run status to complete_with_errors.
+        """
+        out: list[str] = []
         for drop in self.drops:
             original_id = (
                 (drop.get("original") or {}).get("proposal_id")

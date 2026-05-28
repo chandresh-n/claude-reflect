@@ -535,6 +535,81 @@ class TestStageErrorSurfacing:
         assert "errors" not in result, (
             "result must NOT include an 'errors' key on a clean run"
         )
+        assert "warnings" not in result, (
+            "result must NOT include a 'warnings' key on a clean run"
+        )
+
+    def test_proposer_repair_is_warning_not_error(self, tmp_path: Path) -> None:
+        """A proposer that returns string-typed sections gets repaired by
+        the validator. The run must stay status='complete' (repairs are
+        advisory) and the repair must show up under 'warnings', NOT
+        'errors'. Regression guard for the errors/warnings segregation."""
+        _init_git_repo(tmp_path)
+        _setup_kb(tmp_path)
+
+        cmd = ReviewCommand(repo=tmp_path, date_range="last 7 days", verbose=False)
+
+        # Proposer returns a proposal whose how/prediction are strings —
+        # the c3b validator repairs them in one pass and keeps the batch.
+        drifted_batch = {
+            "proposals": [{
+                "proposal_id": "prop-drift",
+                "title": "drifted shape",
+                "why": {"prose_summary": "saw a loop"},
+                "what": {"short_description": "add a rule", "diff_reference": None},
+                "how": "append three lines to CLAUDE.md",       # string, not dict
+                "prediction": "loops should drop",               # string, not dict
+            }],
+        }
+
+        with patch("claude_reflect.cli.evaluate") as mock_eval, \
+             patch("claude_reflect.cli.propose") as mock_propose, \
+             patch.object(cmd, "_make_run_loop") as mock_make:
+            mock_eval.return_value = {
+                "per_turn_observations": [],
+                "pass_classifications": [],
+                "gap_observations": [{"gap_kind": "x"}],
+                "session_narratives": [{"session_id": "s1", "narrative": "n"}],
+            }
+            mock_propose.return_value = drifted_batch
+
+            captured = {}
+
+            def fake_run():
+                # Drive evaluator then proposer wrappers like the run loop.
+                ev = cmd._real_evaluator(sessions=[MagicMock()], repo=tmp_path)
+                captured["proposer_out"] = cmd._real_proposer(
+                    ev, tmp_path, {"start": "x", "end": "y"},
+                )
+                state = MagicMock()
+                state.status = "complete"
+                state.decisions = []
+                state.run_id = "run-drift"
+                state.proposal_batch = captured["proposer_out"]
+                return state
+
+            mock_loop = MagicMock()
+            mock_loop.run.side_effect = fake_run
+            mock_make.return_value = mock_loop
+
+            result = cmd.execute()
+
+        # The proposal survived (repaired, not dropped).
+        assert len(captured["proposer_out"]["proposals"]) == 1
+        # Status stays clean — repairs are advisory.
+        assert result["status"] == "complete", (
+            f"a repair-only run must stay 'complete', not "
+            f"'complete_with_errors'; got {result['status']!r}"
+        )
+        assert "errors" not in result, (
+            f"repairs must NOT surface as errors; got {result.get('errors')!r}"
+        )
+        assert "warnings" in result and result["warnings"], (
+            "the repair must surface under 'warnings'"
+        )
+        assert any("repaired prop-drift" in w for w in result["warnings"]), (
+            f"warning must name the repaired proposal; got {result['warnings']!r}"
+        )
 
 
 class TestModelPicker:
