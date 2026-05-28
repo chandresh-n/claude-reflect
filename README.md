@@ -72,18 +72,22 @@ claude-reflect status
 claude-reflect maintenance
 ```
 
-`claude-reflect review` has three ways to pick which sessions to analyze:
+`claude-reflect review` has two ways to pick which sessions to analyze:
 
 ```bash
-# By date range — natural phrases or explicit ranges
-claude-reflect review --range "yesterday"
-claude-reflect review --range "2026-04-01 to 2026-04-07"
+# Default: interactive picker over your sessions (most recent first)
+claude-reflect review
 
-# By specific session id (repeatable)
+# By specific session id (repeatable) — non-interactive, bypasses the picker
 claude-reflect review --session-id <session_id>
+```
 
-# Interactive picker over recent sessions
-claude-reflect review --pick
+For scripted / CI runs, add `--non-tty`: it never prompts (model defaults
+are used, the review is left pending for a later `--resume`) and requires
+`--session-id` so the run can't silently process your whole history:
+
+```bash
+claude-reflect review --non-tty --session-id <session_id>
 ```
 
 ---
@@ -97,11 +101,13 @@ review at them to exercise the full evaluator → proposer → author pipeline
 without touching your real Claude Code history:
 
 ```bash
-claude-reflect review --fixtures-dir fixtures/sessions/
+claude-reflect review --fixtures
 ```
 
 This is the recommended way to see what claude-reflect does before running
-it against your own work. All knowledge-base state is written under
+it against your own work. `--fixtures` with no value uses the bundled
+corpus; pass a directory (`--fixtures <dir>`) to run your own `*.jsonl`
+sessions instead. All knowledge-base state is written under
 `fixtures/sessions/.claude-reflect/` (gitignored), isolated from your real
 KB. Add `--no-cache` to force fresh agent calls; add `--verbose` to stream
 agent output.
@@ -114,10 +120,10 @@ agent output.
 
 In any repo where you'd like to start the feedback loop, run a review. The
 session-selection modes are the same as shown under [Install](#install)
-above (`--range`, `--session-id`, `--pick`). For example:
+above (the default picker, or `--session-id`). For example:
 
 ```bash
-claude-reflect review --range "last 7 days"
+claude-reflect review
 ```
 
 On first invocation in a repo, claude-reflect automatically initializes:
@@ -128,14 +134,15 @@ On first invocation in a repo, claude-reflect automatically initializes:
 - Writes `config.yaml` with sensible defaults
 - Prompts an **interactive model picker** (one question per agent) — press
   Enter to accept each default. In a non-interactive shell the picker is
-  skipped and defaults are used. See
-  [docs/USAGE.md](docs/USAGE.md#models) for details and `--pick-models`.
+  skipped and defaults are used. To re-pick later, clear the `models`
+  section from `.claude-reflect/config.yaml`. See
+  [docs/USAGE.md](docs/USAGE.md#models) for details.
 
 It then collects recent session logs, runs the evaluator/proposer/author
 pipeline, and presents a proposal batch you can review interactively.
 
-See [docs/USAGE.md](docs/USAGE.md) for the full walkthrough — date ranges,
-session selection, resuming interrupted runs, and reading the output.
+See [docs/USAGE.md](docs/USAGE.md) for the full walkthrough — session
+selection, resuming interrupted runs, and reading the output.
 
 ---
 
@@ -150,8 +157,8 @@ Key knobs:
 - **`models.*`** — which Claude models each agent uses. The evaluator and
   proposer default to Opus for the deepest reasoning; the high-volume
   per-turn pass (`stage_1a`) and the author default to Sonnet for cost
-  efficiency. Set on first run via the interactive picker (or
-  `--pick-models`).
+  efficiency. Set on first run via the interactive picker; to re-pick,
+  clear the `models` section and run again.
 - **`maintenance.trigger_thresholds`** — when maintenance auto-runs
   (sessions, decisions, gaps, time since last).
 - **`stale_gap_threshold_sessions`** — when a gap is considered stale and

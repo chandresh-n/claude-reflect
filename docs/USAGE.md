@@ -40,7 +40,7 @@ itself automatically — you don't need a separate init step.
 
 ```bash
 cd /path/to/your/repo
-claude-reflect review --range "last 7 days"
+claude-reflect review
 ```
 
 If you'd rather check before running, `claude-reflect status` reports
@@ -53,10 +53,12 @@ touching your real Claude Code history — point a review at the bundled
 fixtures:
 
 ```bash
-claude-reflect review --fixtures-dir fixtures/sessions/
+claude-reflect review --fixtures
 ```
 
-KB state for this run is written under `fixtures/sessions/.claude-reflect/`
+`--fixtures` with no value uses the bundled corpus; pass `--fixtures <dir>`
+to run your own directory of `*.jsonl` sessions instead. KB state for this
+run is written under `fixtures/sessions/.claude-reflect/`
 (gitignored), isolated from your real KB. This is the cheapest way to see
 what claude-reflect produces. Note that a review still makes paid Claude
 calls via your Claude Code session; the fixtures are kept small on purpose.
@@ -65,18 +67,17 @@ calls via your Claude Code session; the fixtures are kept small on purpose.
 
 ## Running a review
 
-The `review` subcommand has three ways to pick which sessions to analyze:
+The `review` subcommand has two ways to pick which sessions to analyze:
 
-### By date range
+### Interactive picker (default)
 
 ```bash
-claude-reflect review --range "last 7 days"
-claude-reflect review --range "last week"
-claude-reflect review --range "2026-04-01 to 2026-04-07"
+claude-reflect review
 ```
 
-Natural phrases (`last week`, `yesterday`, `last 30 days`) and explicit
-ranges both work.
+With no selection flag, claude-reflect lists your sessions (most recent
+first) and lets you pick one or more — by index (`1,3,5`), range (`1-3`),
+`all`, or blank for all. This is the default selection mode.
 
 ### By specific session id
 
@@ -84,23 +85,32 @@ ranges both work.
 claude-reflect review --session-id <session_id>
 ```
 
-Useful for replaying a single notable session.
+Non-interactive; bypasses the picker. Repeatable to target several
+sessions. Useful for replaying a single notable session or for scripted
+runs.
 
-### Interactive pick
+### Scripted / CI runs
+
+For fully unattended runs, add `--non-tty`. It forces every interactive
+decision point onto its non-interactive branch — the first-run model
+picker falls back to defaults instead of prompting, and the review step
+writes the proposal batch and leaves decisions pending (pick them up later
+with `--resume`) instead of opening an editor. Because the session picker
+can't run, `--non-tty` requires `--session-id` so the run never silently
+processes your entire history:
 
 ```bash
-claude-reflect review --pick
+claude-reflect review --non-tty --session-id <session_id>
 ```
-
-Shows a list of recent sessions and lets you pick one or more.
 
 ### Common options
 
 | Option            | Description                                                              |
 | ----------------- | ------------------------------------------------------------------------ |
-| `--range`         | Date range for the session window (default selection mode).              |
-| `--session-id`    | Target a single session by id.                                           |
-| `--pick`          | Interactive picker over recent sessions.                                 |
+| `--session-id`    | Target session(s) by id (repeatable); non-interactive, bypasses picker.  |
+| `--fixtures [dir]`| Run against synthetic sessions; no value uses the bundled corpus.        |
+| `--non-tty`       | Force non-interactive mode (no model prompt, no editor). Requires `--session-id`. |
+| `--no-cache`      | Bypass the per-stage cache; re-invoke every agent.                       |
 | `--resume <id>`   | Resume a paused or crashed run from Phase 7 (post-author, pre-review).   |
 | `--verbose`       | Stream agent output and tool-call traces while running.                  |
 | `--repo <path>`   | Target repo (defaults to current directory).                             |
@@ -200,11 +210,9 @@ interactive picker for the model behind each agent (`stage_1a`,
 brackets — press Enter to accept it. Your selection is written to the
 `models` section of `config.yaml` and reused silently on every later run.
 
-To re-trigger the picker after the first run:
-
-```bash
-claude-reflect review --pick-models --range "last 7 days"
-```
+To re-pick after the first run, clear the `models` section from
+`.claude-reflect/config.yaml` and run `review` again — the picker fires
+whenever no `models` section is present.
 
 In a **non-interactive shell** (CI, piped stdin, no TTY) the picker is
 skipped entirely and the defaults above are used silently — scripted runs

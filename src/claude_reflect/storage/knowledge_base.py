@@ -29,7 +29,7 @@ import yaml
 # the operator to choose models per agent; on a non-interactive shell
 # the cli falls back to its own current model IDs and the picker is
 # skipped silently. Once chosen, the models section is persisted here
-# and the picker doesn't fire again unless --pick-models is passed.
+# and the picker doesn't fire again until the models section is cleared.
 _DEFAULT_CONFIG: dict = {
     # Concurrency caps for the evaluator pipeline. Two ceilings, applied
     # independently:

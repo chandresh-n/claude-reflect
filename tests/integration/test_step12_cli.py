@@ -117,27 +117,15 @@ class TestReviewSubcommand:
     def test_review_subcommand_exists(self, tmp_path: Path) -> None:
         """The parser recognizes 'review' as a valid subcommand."""
         parser = build_parser()
-        args = parser.parse_args(["review", "--range", "last 7 days"])
+        args = parser.parse_args(["review"])
         assert args.subcommand == "review"
-
-    def test_review_accepts_absolute_date_range(self, tmp_path: Path) -> None:
-        """review --range '2026-04-01 to 2026-04-07' parses correctly."""
-        parser = build_parser()
-        args = parser.parse_args(["review", "--range", "2026-04-01 to 2026-04-07"])
-        assert "2026-04-01" in args.range
-
-    def test_review_accepts_relative_date_range(self, tmp_path: Path) -> None:
-        """review --range 'last 7 days' parses correctly."""
-        parser = build_parser()
-        args = parser.parse_args(["review", "--range", "last 7 days"])
-        assert "last 7 days" in args.range
 
     def test_review_runs_against_fixture_state(self, tmp_path: Path) -> None:
         """ReviewCommand.execute() runs the run loop against fixture state."""
         _init_git_repo(tmp_path)
         _setup_kb(tmp_path)
 
-        cmd = ReviewCommand(repo=tmp_path, date_range="last 7 days", verbose=False)
+        cmd = ReviewCommand(repo=tmp_path, verbose=False)
         # Should complete without error when agents are mocked
         with patch.object(cmd, "_make_run_loop") as mock_make:
             mock_state = MagicMock()
@@ -235,7 +223,7 @@ class TestResumeFlag:
         )
 
         cmd = ReviewCommand(
-            repo=tmp_path, date_range="last 7 days",
+            repo=tmp_path,
             verbose=False, resume_run_id="run-paused1",
         )
 
@@ -268,7 +256,7 @@ class TestResumeFlag:
         _setup_kb(tmp_path)
 
         cmd = ReviewCommand(
-            repo=tmp_path, date_range="last 7 days",
+            repo=tmp_path,
             verbose=False, resume_run_id="run-does-not-exist",
         )
         with pytest.raises(Exception):
@@ -301,7 +289,7 @@ class TestStageErrorSurfacing:
         _setup_kb(tmp_path)
 
         cmd = ReviewCommand(
-            repo=tmp_path, date_range="last 7 days", verbose=False,
+            repo=tmp_path, verbose=False,
         )
 
         # Force the imported evaluate symbol to raise. The wrapper in
@@ -355,7 +343,7 @@ class TestStageErrorSurfacing:
         _setup_kb(tmp_path)
 
         cmd = ReviewCommand(
-            repo=tmp_path, date_range="last 7 days", verbose=False,
+            repo=tmp_path, verbose=False,
         )
 
         with patch("claude_reflect.cli.author_agent") as mock_author, \
@@ -411,7 +399,7 @@ class TestStageErrorSurfacing:
         _setup_kb(tmp_path)
 
         cmd = ReviewCommand(
-            repo=tmp_path, date_range="last 7 days", verbose=False,
+            repo=tmp_path, verbose=False,
         )
 
         with patch("claude_reflect.cli.author_agent") as mock_author, \
@@ -452,7 +440,7 @@ class TestStageErrorSurfacing:
         _setup_kb(tmp_path)
 
         cmd = ReviewCommand(
-            repo=tmp_path, date_range="last 7 days", verbose=False,
+            repo=tmp_path, verbose=False,
         )
 
         call_count = {"n": 0}
@@ -513,7 +501,7 @@ class TestStageErrorSurfacing:
         _setup_kb(tmp_path)
 
         cmd = ReviewCommand(
-            repo=tmp_path, date_range="last 7 days", verbose=False,
+            repo=tmp_path, verbose=False,
         )
 
         with patch.object(cmd, "_make_run_loop") as mock_make:
@@ -547,7 +535,7 @@ class TestStageErrorSurfacing:
         _init_git_repo(tmp_path)
         _setup_kb(tmp_path)
 
-        cmd = ReviewCommand(repo=tmp_path, date_range="last 7 days", verbose=False)
+        cmd = ReviewCommand(repo=tmp_path, verbose=False)
 
         # Proposer returns a proposal whose how/prediction are strings —
         # the c3b validator repairs them in one pass and keeps the batch.
@@ -613,26 +601,16 @@ class TestStageErrorSurfacing:
 
 
 class TestModelPicker:
-    """First-run model picker + --pick-models flag (c5).
+    """First-run model picker (c5).
 
     Contract:
-      - Picker fires when --pick-models is set OR config has no models
-        section.
+      - Picker fires when config has no models section (first review).
       - On a non-interactive stdin, the picker is skipped and the
         fallback _DEFAULT_MODELS is used silently.
       - When the picker runs, its output is persisted to config.yaml
         so subsequent runs skip the picker.
+      - Once a models section is saved, the picker does not fire again.
     """
-
-    def test_pick_models_flag_parsed(self) -> None:
-        parser = build_parser()
-        args = parser.parse_args(["review", "--pick-models"])
-        assert args.pick_models is True
-
-    def test_pick_models_default_is_false(self) -> None:
-        parser = build_parser()
-        args = parser.parse_args(["review", "--range", "last 7 days"])
-        assert args.pick_models is False
 
     def test_resolve_models_falls_back_silently_when_non_tty(
         self, tmp_path: Path, monkeypatch,
@@ -649,7 +627,7 @@ class TestModelPicker:
         config: dict = {}
         logs: list[str] = []
         models = _resolve_models(
-            tmp_path, config, pick_models=False, log=logs.append,
+            tmp_path, config, log=logs.append,
         )
 
         assert models == _DEFAULT_MODELS, (
@@ -686,7 +664,7 @@ class TestModelPicker:
         )
 
         models = _resolve_models(
-            tmp_path, config, pick_models=False, log=logs.append,
+            tmp_path, config, log=logs.append,
         )
         assert models["evaluator"] == "user-chosen-opus"
         assert models["proposer"] == "user-chosen-opus"
@@ -709,7 +687,7 @@ class TestModelPicker:
         config: dict = {}
         logs: list[str] = []
         models = _resolve_models(
-            tmp_path, config, pick_models=False, log=logs.append,
+            tmp_path, config, log=logs.append,
         )
 
         assert models == _DEFAULT_MODELS
@@ -741,7 +719,7 @@ class TestModelPicker:
 
         monkeypatch.setattr("sys.stdin.isatty", lambda: True)
         monkeypatch.setattr("builtins.input", lambda _p: "")
-        _resolve_models(tmp_path, before, pick_models=False, log=lambda _m: None)
+        _resolve_models(tmp_path, before, log=lambda _m: None)
 
         after = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         non_models_after = {k: v for k, v in after.items() if k != "models"}
@@ -750,31 +728,30 @@ class TestModelPicker:
             f"before={non_models_before!r} after={non_models_after!r}"
         )
 
-    def test_pick_models_flag_forces_picker_even_with_saved_models(
+    def test_saved_models_are_not_re_prompted(
         self, tmp_path: Path, monkeypatch,
     ) -> None:
-        """--pick-models must re-prompt even when config already has a
-        models section, so users can update their selection."""
+        """Once a models section is saved, the picker must not fire again
+        (the only way to re-pick is to clear the models section). This
+        replaces the old --pick-models re-trigger flag, which was removed."""
         from claude_reflect.cli import _resolve_models, _AGENT_DESCRIPTIONS
         _init_git_repo(tmp_path)
         _setup_kb(tmp_path)
 
+        # Interactive stdin, but input() must never be called.
         monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-        # Pretend the user types a custom value for every agent. The
-        # picker iterates _AGENT_DESCRIPTIONS in insertion order, so
-        # the answers must match that ordering.
-        agent_keys = list(_AGENT_DESCRIPTIONS.keys())
-        answers = iter(f"custom-{a}" for a in agent_keys)
-        monkeypatch.setattr("builtins.input", lambda _p: next(answers))
-
-        config = {"models": {a: f"old-{a}" for a in agent_keys}}
-        models = _resolve_models(
-            tmp_path, config, pick_models=True, log=lambda _m: None,
+        monkeypatch.setattr(
+            "builtins.input",
+            lambda _p: pytest.fail("picker fired despite saved models"),
         )
 
-        assert models == {a: f"custom-{a}" for a in agent_keys}, (
-            f"picker must update every agent's model from the user's "
-            f"answers; got {models!r}"
+        agent_keys = list(_AGENT_DESCRIPTIONS.keys())
+        config = {"models": {a: f"old-{a}" for a in agent_keys}}
+        models = _resolve_models(tmp_path, config, log=lambda _m: None)
+
+        assert models == {a: f"old-{a}" for a in agent_keys}, (
+            f"saved models must be returned verbatim without re-prompting; "
+            f"got {models!r}"
         )
 
 
@@ -834,7 +811,7 @@ class TestStage1aModelWiring:
         """Users upgrading from c5 (pre-Phase-1) have a config with
         models.{evaluator,proposer,author} but no models.stage_1a. The
         cli must transparently use evaluator's model for stage 1a until
-        the user re-runs --pick-models."""
+        the user clears the models section to re-pick."""
         from claude_reflect.cli import ReviewCommand
         _init_git_repo(tmp_path)
         _setup_kb(tmp_path)
@@ -849,7 +826,7 @@ class TestStage1aModelWiring:
         }
         config_path.write_text(yaml.dump(existing), encoding="utf-8")
 
-        cmd = ReviewCommand(repo=tmp_path, date_range="last 7 days", verbose=False)
+        cmd = ReviewCommand(repo=tmp_path, verbose=False)
 
         captured_evaluate_kwargs: dict = {}
 
@@ -893,13 +870,13 @@ class TestVerboseFlag:
     def test_verbose_flag_parsed(self, tmp_path: Path) -> None:
         """The parser accepts --verbose."""
         parser = build_parser()
-        args = parser.parse_args(["review", "--range", "last 7 days", "--verbose"])
+        args = parser.parse_args(["review", "--verbose"])
         assert args.verbose is True
 
     def test_verbose_default_is_false(self, tmp_path: Path) -> None:
         """Without --verbose, verbose defaults to False."""
         parser = build_parser()
-        args = parser.parse_args(["review", "--range", "last 7 days"])
+        args = parser.parse_args(["review"])
         assert args.verbose is False
 
     def test_verbose_produces_additional_output(self, tmp_path: Path, capsys) -> None:
@@ -907,7 +884,7 @@ class TestVerboseFlag:
         _init_git_repo(tmp_path)
         _setup_kb(tmp_path)
 
-        cmd = ReviewCommand(repo=tmp_path, date_range="last 7 days", verbose=True)
+        cmd = ReviewCommand(repo=tmp_path, verbose=True)
 
         with patch.object(cmd, "_make_run_loop") as mock_make:
             mock_state = MagicMock()
@@ -939,7 +916,7 @@ class TestFreshRepoFirstInvocation:
         _init_git_repo(tmp_path)
         assert not (tmp_path / ".claude-reflect").exists()
 
-        cmd = ReviewCommand(repo=tmp_path, date_range="last 7 days", verbose=False)
+        cmd = ReviewCommand(repo=tmp_path, verbose=False)
 
         with patch.object(cmd, "_make_run_loop") as mock_make:
             mock_state = MagicMock()
@@ -960,7 +937,7 @@ class TestFreshRepoFirstInvocation:
         _setup_kb(tmp_path)
         assert (tmp_path / ".claude-reflect").is_dir()
 
-        cmd = ReviewCommand(repo=tmp_path, date_range="last 7 days", verbose=False)
+        cmd = ReviewCommand(repo=tmp_path, verbose=False)
 
         with patch("claude_reflect.cli.kb_setup") as mock_setup, \
              patch.object(cmd, "_make_run_loop") as mock_make:
@@ -1228,7 +1205,7 @@ class TestCLIEntryPoint:
             mock_instance.execute.return_value = {"status": "complete"}
             MockReview.return_value = mock_instance
             # Call main with appropriate arguments
-            main(["review", "--range", "last 7 days", "--repo", str(tmp_path)])
+            main(["review", "--repo", str(tmp_path)])
             MockReview.assert_called_once()
 
     def test_main_with_status(self, tmp_path: Path) -> None:

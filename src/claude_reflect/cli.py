@@ -21,7 +21,7 @@ import re
 import subprocess
 import sys
 import tempfile
-from datetime import date, datetime, timezone, timedelta
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -170,6 +170,11 @@ def render_proposal_batch_markdown(
 # ---------------------------------------------------------------------------
 
 
+# Sentinel for `--fixtures` with no value: use the bundled corpus rather than
+# a user-supplied directory. argparse stores this as the flag's `const`.
+_BUNDLED_FIXTURES = "__bundled__"
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the CLI argument parser with review/status/maintenance subcommands."""
     parser = argparse.ArgumentParser(
@@ -177,12 +182,14 @@ def build_parser() -> argparse.ArgumentParser:
         description="Reflective pass over Claude Code session logs.",
         epilog=(
             "Getting started:\n"
-            "  claude-reflect review --fixtures-dir fixtures/sessions/   "
-            "# safe trial on synthetic sessions\n"
-            "  claude-reflect status                                     "
+            "  claude-reflect review --fixtures   "
+            "# safe trial on the bundled synthetic sessions\n"
+            "  claude-reflect status              "
             "# check if the current repo is initialized\n"
-            "  claude-reflect review --range 'last 7 days'               "
-            "# run a pass over your own sessions\n"
+            "  claude-reflect review              "
+            "# pick which of your own sessions to review\n"
+            "  claude-reflect review --non-tty --session-id <id>   "
+            "# unattended / CI run\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -199,21 +206,10 @@ def build_parser() -> argparse.ArgumentParser:
     review_p = sub.add_parser("review", help="Run a reflective review pass.")
     review_p.add_argument("--repo", **repo_kwargs)
     review_p.add_argument(
-        "--range", dest="range", default=None,
-        help="Date range (e.g. 'last 7 days', '2026-04-01 to 2026-04-07').",
-    )
-    review_p.add_argument(
         "--session-id", dest="session_ids", action="append", default=None,
         help=(
-            "Pick a specific session by id (repeatable). "
-            "Mutually exclusive with --range."
-        ),
-    )
-    review_p.add_argument(
-        "--pick", dest="pick", action="store_true", default=False,
-        help=(
-            "After resolving --range, present an interactive picker so you "
-            "can select which sessions to include. Requires a TTY."
+            "Pick specific session(s) by id (repeatable). Non-interactive "
+            "alternative to the default picker; bypasses it."
         ),
     )
     review_p.add_argument(
@@ -225,13 +221,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Enable streamed output and tool-call traces.",
     )
     review_p.add_argument(
-        "--fixtures-dir", dest="fixtures_dir", default=None,
+        "--fixtures", dest="fixtures", nargs="?",
+        const=_BUNDLED_FIXTURES, default=None,
         help=(
-            "Run against synthetic session JSONLs in this directory "
-            "instead of ~/.claude/projects/. KB state is written under "
-            "<fixtures-dir>/.claude-reflect/, isolated from your real KB. "
-            "Ignores --range / --session-id / --pick; loads every "
-            "*.jsonl in the dir as the session window."
+            "Run against synthetic fixture sessions instead of your real "
+            "history. With no value, uses the bundled corpus "
+            "(fixtures/sessions/); optionally pass a directory of *.jsonl "
+            "sessions to use your own. KB state is written under "
+            "<dir>/.claude-reflect/, isolated from your real KB. Loads "
+            "every *.jsonl in the dir as the session window; bypasses the "
+            "session picker and --session-id."
         ),
     )
     review_p.add_argument(
@@ -244,13 +243,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     review_p.add_argument(
-        "--pick-models", dest="pick_models", action="store_true", default=False,
+        "--non-tty", dest="non_tty", action="store_true", default=False,
         help=(
-            "Re-trigger the interactive model picker for evaluator / "
-            "proposer / author, even when config.yaml already has a "
-            "models section. By default the picker runs only on the very "
-            "first review in a repo. Requires a TTY; ignored if stdin "
-            "isn't interactive."
+            "Force fully non-interactive operation for scripted / CI runs: "
+            "never prompt for model selection and never open an editor for "
+            "review (decisions are left pending for a later --resume). "
+            "Requires --session-id, since the interactive session picker "
+            "cannot run; this avoids silently processing your entire "
+            "session history."
         ),
     )
 
@@ -277,24 +277,20 @@ class ReviewCommand:
         self,
         *,
         repo: Path,
-        date_range: str,
         verbose: bool = False,
         resume_run_id: Optional[str] = None,
         session_ids: Optional[List[str]] = None,
-        pick: bool = False,
         fixtures_dir: Optional[Path] = None,
         no_cache: bool = False,
-        pick_models: bool = False,
+        non_tty: bool = False,
     ):
         self.repo = repo
-        self.date_range = date_range
         self.verbose = verbose
         self.resume_run_id = resume_run_id
         self.session_ids = session_ids
-        self.pick = pick
         self.fixtures_dir = fixtures_dir
         self.no_cache = no_cache
-        self.pick_models = pick_models
+        self.non_tty = non_tty
 
     def execute(self) -> dict:
         """Run the review pass and return a result dict."""
@@ -303,10 +299,10 @@ class ReviewCommand:
         if self.no_cache:
             os.environ["CLAUDE_REFLECT_NO_CACHE"] = "1"
 
-        # --fixtures-dir: rebase the run onto a synthetic session directory.
+        # --fixtures: rebase the run onto a synthetic session directory.
         # KB state writes to <fixtures-dir>/.claude-reflect/, isolated from
         # the user's real KB. Session selection becomes "all JSONLs in dir";
-        # --range, --session-id, --pick are bypassed.
+        # the picker and --session-id are bypassed.
         if self.fixtures_dir:
             self.repo = self.fixtures_dir
 
@@ -326,19 +322,19 @@ class ReviewCommand:
                     f"Cannot resume: no run state found for {self.resume_run_id}"
                 )
 
-        # Load config and resolve per-agent models. The picker fires when
-        # --pick-models is set or the repo's config has no models section
-        # (first-run); otherwise the saved selection is used silently.
+        # Load config and resolve per-agent models. The picker fires on the
+        # first review in a repo (config has no models section); otherwise
+        # the saved selection is used silently.
         config = _load_config(self.repo)
         resolved_models = _resolve_models(
-            self.repo, config, pick_models=self.pick_models, log=self._log,
+            self.repo, config, log=self._log, non_interactive=self.non_tty,
         )
         config.setdefault("models", {}).update(resolved_models)
 
-        # Collect sessions: fixtures-dir > --session-id > --range.
+        # Collect sessions: fixtures > --session-id > interactive picker.
         if self.fixtures_dir:
             self._log(
-                f"Starting review pass (fixtures-dir: {self.fixtures_dir})..."
+                f"Starting review pass (fixtures: {self.fixtures_dir})..."
             )
             reader = SessionLogReader(self.fixtures_dir)
             sessions = reader.list_all_sessions()
@@ -352,22 +348,13 @@ class ReviewCommand:
             )
             date_range_dict = _date_range_from_sessions(sessions)
         else:
-            self._log(f"Starting review pass (range: {self.date_range})...")
-            date_range_dict = _parse_date_range(self.date_range)
-            sessions = _collect_sessions(
-                self.repo, date_range_dict, verbose=self.verbose
-            )
-
-            if self.pick:
-                if not sessions:
-                    self._log("No sessions in range to pick from.")
-                else:
-                    sessions = _present_session_picker(sessions)
-                    # Narrow the recorded window to the chosen sessions so the
-                    # proposal batch markdown reflects what was actually used.
-                    narrowed = _date_range_from_sessions(sessions)
-                    if narrowed["start"] != "unknown":
-                        date_range_dict = narrowed
+            self._log("Starting review pass (interactive session picker)...")
+            sessions = _collect_all_sessions(self.repo, verbose=self.verbose)
+            if sessions:
+                sessions = _present_session_picker(sessions)
+            # Record the window from whatever was actually selected so the
+            # proposal batch markdown reflects what was used.
+            date_range_dict = _date_range_from_sessions(sessions)
 
         if not sessions and not self.resume_run_id:
             if self.session_ids:
@@ -552,8 +539,12 @@ class ReviewCommand:
                     "author_failure_reason": f"Unexpected {type(e).__name__}: {e}",
                 }
 
+        non_tty = self.non_tty
+
         def real_human_review(batch):
-            return _human_review_via_markdown(batch, repo, date_range_dict, verbose=verbose)
+            return _human_review_via_markdown(
+                batch, repo, date_range_dict, verbose=verbose, non_tty=non_tty,
+            )
 
         self._real_evaluator = real_evaluator
         self._real_proposer = real_proposer
@@ -690,35 +681,26 @@ def main(argv: Optional[List[str]] = None) -> None:
     repo = Path(args.repo) if args.repo else Path.cwd()
 
     if args.subcommand == "review":
-        # --session-id and --range are mutually exclusive: one names specific
-        # sessions, the other names a window. Mixing them is ambiguous.
-        if args.session_ids and args.range:
-            parser.error("--session-id and --range cannot be used together")
-        if args.session_ids and args.pick:
-            parser.error("--pick only applies when selecting by --range")
-        # --fixtures-dir is a self-contained mode: it supplies the sessions
-        # AND the KB root, so other selectors don't make sense alongside it.
-        if args.fixtures_dir and (args.session_ids or args.pick or args.range):
-            parser.error(
-                "--fixtures-dir cannot be combined with --range / --session-id / --pick"
-            )
+        # --fixtures is a self-contained mode: it supplies the sessions AND
+        # the KB root, so --session-id doesn't make sense alongside it.
+        if args.fixtures is not None and args.session_ids:
+            parser.error("--fixtures cannot be combined with --session-id")
+        # --non-tty disables the interactive session picker, so the run has
+        # no way to choose sessions unless they're named explicitly. Mandate
+        # --session-id rather than fall through to "process everything".
+        if args.non_tty and not args.session_ids:
+            parser.error("--non-tty requires --session-id")
 
-        fixtures_dir_path = (
-            Path(args.fixtures_dir).resolve() if args.fixtures_dir else None
-        )
-        if fixtures_dir_path is not None and not fixtures_dir_path.is_dir():
-            parser.error(f"--fixtures-dir does not exist or is not a directory: {fixtures_dir_path}")
+        fixtures_dir_path = _resolve_fixtures_dir(args.fixtures, parser)
 
         cmd = ReviewCommand(
             repo=repo,
-            date_range=args.range or "last 7 days",
             verbose=args.verbose,
             resume_run_id=args.resume,
             session_ids=args.session_ids,
-            pick=args.pick,
             fixtures_dir=fixtures_dir_path,
             no_cache=args.no_cache,
-            pick_models=args.pick_models,
+            non_tty=args.non_tty,
         )
         result = cmd.execute()
         if result:
@@ -743,35 +725,50 @@ def main(argv: Optional[List[str]] = None) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _parse_date_range(raw: str) -> dict:
-    """Parse a date range string into {start, end} dict."""
-    if " to " in raw:
-        parts = raw.split(" to ", 1)
-        return {"start": parts[0].strip(), "end": parts[1].strip()}
+def _bundled_fixtures_dir() -> Path:
+    """Locate the bundled synthetic-session corpus (``fixtures/sessions/``).
 
-    # Relative ranges
-    now = datetime.now(timezone.utc)
-    if raw.startswith("last "):
-        # e.g. "last 7 days", "last week"
-        token = raw.replace("last ", "").strip()
-        if "week" in token:
-            delta = timedelta(days=7)
-        elif "day" in token:
-            # Extract the number
-            num_str = "".join(c for c in token if c.isdigit())
-            days = int(num_str) if num_str else 7
-            delta = timedelta(days=days)
-        else:
-            delta = timedelta(days=7)
+    Resolves relative to the repo root (this file lives at
+    ``src/claude_reflect/cli.py``, so the repo root is ``parents[2]``) and,
+    as a fallback, the current working directory. Returns the first existing
+    candidate, or the repo-root candidate so the caller can emit a clear
+    'not found' error.
+    """
+    repo_root = Path(__file__).resolve().parents[2] / "fixtures" / "sessions"
+    cwd = Path.cwd() / "fixtures" / "sessions"
+    for candidate in (repo_root, cwd):
+        if candidate.is_dir():
+            return candidate
+    return repo_root
 
-        start = (now - delta).strftime("%Y-%m-%d")
-        end = now.strftime("%Y-%m-%d")
-        return {"start": start, "end": end}
 
-    # Fallback: last 7 days
-    start = (now - timedelta(days=7)).strftime("%Y-%m-%d")
-    end = now.strftime("%Y-%m-%d")
-    return {"start": start, "end": end}
+def _resolve_fixtures_dir(
+    raw: Optional[str], parser: argparse.ArgumentParser,
+) -> Optional[Path]:
+    """Turn the ``--fixtures`` arg value into a validated directory path.
+
+    ``None``               → not in fixture mode (returns ``None``).
+    ``_BUNDLED_FIXTURES``  → the bundled ``fixtures/sessions/`` corpus.
+    any other string       → a user-supplied directory.
+
+    Calls ``parser.error`` (which exits) if the resolved directory is
+    missing.
+    """
+    if raw is None:
+        return None
+    if raw == _BUNDLED_FIXTURES:
+        path = _bundled_fixtures_dir()
+        if not path.is_dir():
+            parser.error(
+                "bundled fixture corpus not found (looked for "
+                "fixtures/sessions/); run from the repo root or pass "
+                "--fixtures <dir>"
+            )
+        return path
+    path = Path(raw).resolve()
+    if not path.is_dir():
+        parser.error(f"--fixtures dir does not exist or is not a directory: {path}")
+    return path
 
 
 def _load_config(repo: Path) -> dict:
@@ -881,33 +878,28 @@ def _save_models_to_config(repo: Path, models: dict) -> None:
 
 
 def _resolve_models(
-    repo: Path, config: dict, *, pick_models: bool, log: callable,
+    repo: Path, config: dict, *, log: callable, non_interactive: bool = False,
 ) -> dict:
     """Decide what model to use per agent and persist the choice.
 
-    Triggers the interactive picker when:
-      - ``--pick-models`` was passed explicitly, OR
-      - config.yaml has no ``models`` section (fresh repo).
+    Triggers the interactive picker on the first review in a repo (config
+    has no ``models`` section). Once a selection is saved, the picker does
+    not fire again — to re-pick, clear the ``models`` section from
+    ``.claude-reflect/config.yaml``.
 
-    Falls back to ``_DEFAULT_MODELS`` (silently) on non-interactive
-    stdin so scripted / CI runs do not hang waiting for input.
+    Falls back to ``_DEFAULT_MODELS`` (silently) when stdin is not a TTY,
+    or when ``non_interactive`` is set (the ``--non-tty`` flag), so
+    scripted / CI runs do not hang waiting for input.
     """
-    has_models = bool(config.get("models"))
-    should_prompt = pick_models or not has_models
-    if not should_prompt:
+    if config.get("models"):
         return dict(config["models"])
 
-    if not sys.stdin.isatty():
-        if pick_models:
-            log(
-                "--pick-models requested but stdin is not a TTY; "
-                "falling back to defaults silently."
-            )
+    if non_interactive or not sys.stdin.isatty():
         return dict(_DEFAULT_MODELS)
 
     chosen = _prompt_for_models(config.get("models") or {})
     _save_models_to_config(repo, chosen)
-    log(f"Saved model selection to .claude-reflect/config.yaml.")
+    log("Saved model selection to .claude-reflect/config.yaml.")
     return chosen
 
 
@@ -952,8 +944,12 @@ def _find_session_log_dir(repo: Path) -> Optional[Path]:
     return None
 
 
-def _collect_sessions(repo: Path, date_range: dict, verbose: bool = False) -> list:
-    """Collect Claude Code sessions in the given date range."""
+def _collect_all_sessions(repo: Path, verbose: bool = False) -> list:
+    """Collect every Claude Code session for the repo, most recent first.
+
+    The default review path feeds this list to the interactive picker, so
+    there is no date-range filtering here — narrowing is the human's job.
+    """
     session_dir = _find_session_log_dir(repo)
     if session_dir is None:
         if verbose:
@@ -968,17 +964,11 @@ def _collect_sessions(repo: Path, date_range: dict, verbose: bool = False) -> li
         print(f"Reading sessions from: {session_dir}", file=sys.stderr, flush=True)
 
     reader = SessionLogReader(session_dir)
-
-    start_str = date_range.get("start", "")
-    end_str = date_range.get("end", "")
-    try:
-        start_date = date.fromisoformat(start_str)
-        end_date = date.fromisoformat(end_str)
-    except (ValueError, TypeError):
-        # If parsing fails, return all sessions
-        return reader.list_all_sessions()
-
-    sessions = reader.sessions_in_range(start_date, end_date)
+    sessions = reader.list_all_sessions()
+    # Most recent first so the picker leads with the sessions a user is
+    # most likely to want. Sessions missing a start_time sort last.
+    _epoch = datetime.min.replace(tzinfo=timezone.utc)
+    sessions.sort(key=lambda s: s.start_time or _epoch, reverse=True)
     return sessions
 
 
@@ -1203,6 +1193,7 @@ def _human_review_via_markdown(
     repo: Path,
     date_range: dict,
     verbose: bool = False,
+    non_tty: bool = False,
 ) -> dict:
     """Present the proposal batch as markdown and collect human decisions.
 
@@ -1263,7 +1254,7 @@ def _human_review_via_markdown(
 
     editor = os.environ.get("EDITOR", os.environ.get("VISUAL", ""))
 
-    if editor and sys.stdin.isatty():
+    if editor and sys.stdin.isatty() and not non_tty:
         print(
             f"\nOpening proposal batch for review: {batch_path}",
             file=sys.stderr,

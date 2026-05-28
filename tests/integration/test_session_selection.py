@@ -1,10 +1,12 @@
 """
-Tests for the post-build session-selection ergonomics:
-  - `--session-id` flag on `review` (repeatable, mutex with --range/--pick).
-  - `--pick` flag on `review` (interactive picker over the date range).
+Tests for the session-selection ergonomics:
+  - `--session-id` flag on `review` (repeatable; non-interactive selector
+    that bypasses the picker).
+  - The interactive session picker, which is the default selection mode
+    when neither `--session-id` nor `--fixtures` is given.
 
-These are not part of any PLAN.md step; they're CLI ergonomics added on top
-of the completed 15-step build. The tests stick to the public surface
+These are not part of any PLAN.md step; they're CLI ergonomics layered on
+top of the completed build. The tests stick to the public surface
 (`build_parser`, `main`, `ReviewCommand`) plus a few module-private helpers
 where the behavior would be awkward to drive end-to-end.
 """
@@ -84,18 +86,18 @@ class TestArgparseSurface:
 
     def test_session_id_absent_defaults_to_none(self) -> None:
         parser = build_parser()
-        args = parser.parse_args(["review", "--range", "last 7 days"])
+        args = parser.parse_args(["review"])
         assert args.session_ids is None
 
-    def test_pick_is_store_true(self) -> None:
+    def test_non_tty_flag_parsed(self) -> None:
         parser = build_parser()
-        args = parser.parse_args(["review", "--range", "last 7 days", "--pick"])
-        assert args.pick is True
+        args = parser.parse_args(["review", "--non-tty", "--session-id", "x"])
+        assert args.non_tty is True
 
-    def test_pick_defaults_false(self) -> None:
+    def test_non_tty_defaults_false(self) -> None:
         parser = build_parser()
-        args = parser.parse_args(["review", "--range", "last 7 days"])
-        assert args.pick is False
+        args = parser.parse_args(["review"])
+        assert args.non_tty is False
 
 
 # ---------------------------------------------------------------------------
@@ -104,24 +106,14 @@ class TestArgparseSurface:
 
 
 class TestMainMutex:
-    def test_session_id_and_range_are_mutex(self, tmp_path: Path) -> None:
+    def test_session_id_and_fixtures_are_mutex(self, tmp_path: Path) -> None:
         _init_git_repo(tmp_path)
         with pytest.raises(SystemExit):
             main([
                 "review",
                 "--repo", str(tmp_path),
                 "--session-id", "abc",
-                "--range", "last 7 days",
-            ])
-
-    def test_session_id_and_pick_are_mutex(self, tmp_path: Path) -> None:
-        _init_git_repo(tmp_path)
-        with pytest.raises(SystemExit):
-            main([
-                "review",
-                "--repo", str(tmp_path),
-                "--session-id", "abc",
-                "--pick",
+                "--fixtures",
             ])
 
     def test_session_id_alone_dispatches_to_review_with_ids(
@@ -142,11 +134,23 @@ class TestMainMutex:
 
             kwargs = MockReview.call_args.kwargs
             assert kwargs["session_ids"] == ["abc", "def"]
-            assert kwargs["pick"] is False
 
-    def test_pick_alone_dispatches_to_review_with_pick_true(
-        self, tmp_path: Path
-    ) -> None:
+
+# ---------------------------------------------------------------------------
+# --non-tty: mandates --session-id and forces non-interactive behavior
+# ---------------------------------------------------------------------------
+
+
+class TestNonTty:
+    def test_non_tty_without_session_id_errors(self, tmp_path: Path) -> None:
+        """--non-tty disables the picker, so it must be paired with an
+        explicit session selection rather than silently processing the
+        whole history."""
+        _init_git_repo(tmp_path)
+        with pytest.raises(SystemExit):
+            main(["review", "--repo", str(tmp_path), "--non-tty"])
+
+    def test_non_tty_with_session_id_dispatches(self, tmp_path: Path) -> None:
         _init_git_repo(tmp_path)
         with patch("claude_reflect.cli.ReviewCommand") as MockReview:
             instance = MagicMock()
@@ -156,13 +160,62 @@ class TestMainMutex:
             main([
                 "review",
                 "--repo", str(tmp_path),
-                "--range", "last 7 days",
-                "--pick",
+                "--non-tty",
+                "--session-id", "abc",
             ])
 
             kwargs = MockReview.call_args.kwargs
-            assert kwargs["pick"] is True
-            assert kwargs["session_ids"] is None
+            assert kwargs["non_tty"] is True
+            assert kwargs["session_ids"] == ["abc"]
+
+    def test_non_tty_forces_default_models_even_on_tty(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With non_interactive=True the model picker must not fire even if
+        stdin looks like a TTY — defaults are used silently."""
+        from claude_reflect.cli import _resolve_models, _DEFAULT_MODELS
+        _init_git_repo(tmp_path)
+        from claude_reflect.storage.knowledge_base import setup as kb_setup
+        kb_setup(tmp_path)
+
+        monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+        monkeypatch.setattr(
+            "builtins.input",
+            lambda _p: pytest.fail("picker fired despite --non-tty"),
+        )
+
+        models = _resolve_models(
+            tmp_path, {}, log=lambda _m: None, non_interactive=True,
+        )
+        assert models == _DEFAULT_MODELS
+
+    def test_non_tty_human_review_skips_editor(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """In --non-tty mode the review must not open an editor even when
+        $EDITOR is set and stdin looks interactive; decisions are left
+        pending for a later --resume."""
+        from claude_reflect.cli import _human_review_via_markdown
+        _init_git_repo(tmp_path)
+        (tmp_path / ".claude-reflect" / "runs").mkdir(parents=True)
+
+        monkeypatch.setenv("EDITOR", "vi")
+        monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+
+        def boom(*args, **kwargs):
+            pytest.fail("editor subprocess launched despite --non-tty")
+
+        monkeypatch.setattr("subprocess.run", boom)
+
+        batch = {
+            "run_id": "run-nontty",
+            "proposals": [{"proposal_id": "p1", "title": "t"}],
+        }
+        decisions = _human_review_via_markdown(
+            batch, tmp_path, {"start": "x", "end": "y"}, non_tty=True,
+        )
+        # Non-editor path leaves everything pending for --resume.
+        assert decisions == {"p1": "pending"}
 
 
 # ---------------------------------------------------------------------------
@@ -450,7 +503,8 @@ class TestPresentSessionPicker:
 
 
 # ---------------------------------------------------------------------------
-# ReviewCommand wiring (does --session-id / --pick reach _collect_*?)
+# ReviewCommand wiring (does --session-id / the default picker reach
+# the right collectors?)
 # ---------------------------------------------------------------------------
 
 
@@ -459,32 +513,31 @@ class TestReviewCommandWiring:
         from claude_reflect.storage.knowledge_base import setup as kb_setup
         kb_setup(repo)
 
-    def test_session_ids_path_skips_range_collection(
+    def test_session_ids_path_skips_picker_collection(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _init_git_repo(tmp_path)
         self._setup_kb(tmp_path)
 
-        called = {"by_id": 0, "by_range": 0}
+        called = {"by_id": 0, "all": 0}
 
         def fake_by_id(repo, ids, verbose=False):
             called["by_id"] += 1
             return []
 
-        def fake_by_range(repo, dr, verbose=False):
-            called["by_range"] += 1
+        def fake_all(repo, verbose=False):
+            called["all"] += 1
             return []
 
         monkeypatch.setattr(
             "claude_reflect.cli._collect_sessions_by_id", fake_by_id
         )
         monkeypatch.setattr(
-            "claude_reflect.cli._collect_sessions", fake_by_range
+            "claude_reflect.cli._collect_all_sessions", fake_all
         )
 
         cmd = ReviewCommand(
             repo=tmp_path,
-            date_range="last 7 days",
             session_ids=["abc", "def"],
         )
         # Replace the run loop with a mock so we don't actually run agents.
@@ -495,9 +548,9 @@ class TestReviewCommandWiring:
             cmd.execute()
 
         assert called["by_id"] == 1
-        assert called["by_range"] == 0
+        assert called["all"] == 0
 
-    def test_pick_path_invokes_picker(
+    def test_default_path_invokes_picker(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _init_git_repo(tmp_path)
@@ -517,8 +570,8 @@ class TestReviewCommandWiring:
         )
 
         monkeypatch.setattr(
-            "claude_reflect.cli._collect_sessions",
-            lambda repo, dr, verbose=False: [a, b],
+            "claude_reflect.cli._collect_all_sessions",
+            lambda repo, verbose=False: [a, b],
         )
 
         picker_calls = {"count": 0, "received": None}
@@ -532,11 +585,8 @@ class TestReviewCommandWiring:
             "claude_reflect.cli._present_session_picker", fake_picker
         )
 
-        cmd = ReviewCommand(
-            repo=tmp_path,
-            date_range="last 7 days",
-            pick=True,
-        )
+        # No --session-id, no --fixtures → default interactive picker path.
+        cmd = ReviewCommand(repo=tmp_path)
         with patch.object(cmd, "_make_run_loop") as mk:
             mk.return_value.run.return_value = MagicMock(
                 run_id="r1", status="complete", decisions={}
@@ -548,15 +598,15 @@ class TestReviewCommandWiring:
         # The run loop should have received the picker-narrowed list.
         assert [s.session_id for s in cmd._collected_sessions] == ["alpha"]
 
-    def test_pick_with_no_sessions_skips_picker(
+    def test_default_path_with_no_sessions_skips_picker(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _init_git_repo(tmp_path)
         self._setup_kb(tmp_path)
 
         monkeypatch.setattr(
-            "claude_reflect.cli._collect_sessions",
-            lambda repo, dr, verbose=False: [],
+            "claude_reflect.cli._collect_all_sessions",
+            lambda repo, verbose=False: [],
         )
 
         called = {"picker": 0}
@@ -569,11 +619,7 @@ class TestReviewCommandWiring:
             "claude_reflect.cli._present_session_picker", fake_picker
         )
 
-        cmd = ReviewCommand(
-            repo=tmp_path,
-            date_range="last 7 days",
-            pick=True,
-        )
+        cmd = ReviewCommand(repo=tmp_path)
         with patch.object(cmd, "_make_run_loop") as mk:
             mk.return_value.run.return_value = MagicMock(
                 run_id="r1", status="complete", decisions={}
@@ -582,19 +628,19 @@ class TestReviewCommandWiring:
 
         assert called["picker"] == 0
 
-    def test_existing_callers_without_new_kwargs_still_work(
+    def test_minimal_caller_still_works(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # Regression guard: the new __init__ params must default to inert.
+        # Regression guard: ReviewCommand with only repo= must run.
         _init_git_repo(tmp_path)
         self._setup_kb(tmp_path)
 
         monkeypatch.setattr(
-            "claude_reflect.cli._collect_sessions",
-            lambda repo, dr, verbose=False: [],
+            "claude_reflect.cli._collect_all_sessions",
+            lambda repo, verbose=False: [],
         )
 
-        cmd = ReviewCommand(repo=tmp_path, date_range="last 7 days")
+        cmd = ReviewCommand(repo=tmp_path)
         with patch.object(cmd, "_make_run_loop") as mk:
             mk.return_value.run.return_value = MagicMock(
                 run_id="r1", status="complete", decisions={}

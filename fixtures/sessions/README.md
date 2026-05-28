@@ -6,9 +6,11 @@ pipeline end-to-end without hitting your real session history.
 Run them with:
 
 ```bash
-claude-reflect review --fixtures-dir fixtures/sessions/
+claude-reflect review --fixtures
 ```
 
+`--fixtures` with no value points at this bundled corpus; pass
+`--fixtures <dir>` to use a different directory of `*.jsonl` sessions.
 This treats every `*.jsonl` in the directory as one session window, runs
 the evaluator → proposer → author → review pipeline against them, and
 writes all KB state under `fixtures/sessions/.claude-reflect/` (which is
