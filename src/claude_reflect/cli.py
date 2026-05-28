@@ -175,6 +175,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="claude-reflect",
         description="Reflective pass over Claude Code session logs.",
+        epilog=(
+            "Getting started:\n"
+            "  claude-reflect review --fixtures-dir fixtures/sessions/   "
+            "# safe trial on synthetic sessions\n"
+            "  claude-reflect status                                     "
+            "# check if the current repo is initialized\n"
+            "  claude-reflect review --range 'last 7 days'               "
+            "# run a pass over your own sessions\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     sub = parser.add_subparsers(dest="subcommand")
 

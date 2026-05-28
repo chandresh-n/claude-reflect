@@ -90,19 +90,34 @@ claude-reflect review --pick
 
 ## First run
 
-In any repo where you'd like to start the feedback loop, run a review.
-You can target sessions three ways:
+### Try it safely first (no real sessions, no setup)
+
+The repo ships synthetic session logs under `fixtures/sessions/`. Point a
+review at them to exercise the full evaluator → proposer → author pipeline
+without touching your real Claude Code history:
 
 ```bash
-# A date range — natural phrases or explicit windows
-claude-reflect review --range "yesterday"
-claude-reflect review --range "2026-04-01 to 2026-04-07"
+claude-reflect review --fixtures-dir fixtures/sessions/
+```
 
-# A specific session by id (repeatable)
-claude-reflect review --session-id <session_id>
+This is the recommended way to see what claude-reflect does before running
+it against your own work. All knowledge-base state is written under
+`fixtures/sessions/.claude-reflect/` (gitignored), isolated from your real
+KB. Add `--no-cache` to force fresh agent calls; add `--verbose` to stream
+agent output.
 
-# Interactive picker — choose from recent sessions
-claude-reflect review --pick
+> Heads up: a review makes paid Claude calls (via your Claude Code session)
+> for the evaluator, proposer, and author agents. The fixtures run above is
+> the cheapest way to try the tool — each fixture is kept small on purpose.
+
+### Run it against your own repo
+
+In any repo where you'd like to start the feedback loop, run a review. The
+session-selection modes are the same as shown under [Install](#install)
+above (`--range`, `--session-id`, `--pick`). For example:
+
+```bash
+claude-reflect review --range "last 7 days"
 ```
 
 On first invocation in a repo, claude-reflect automatically initializes:
@@ -111,6 +126,10 @@ On first invocation in a repo, claude-reflect automatically initializes:
 - Creates the `claude-reflect/decisions` git branch (your working branch
   stays active)
 - Writes `config.yaml` with sensible defaults
+- Prompts an **interactive model picker** (one question per agent) — press
+  Enter to accept each default. In a non-interactive shell the picker is
+  skipped and defaults are used. See
+  [docs/USAGE.md](docs/USAGE.md#models) for details and `--pick-models`.
 
 It then collects recent session logs, runs the evaluator/proposer/author
 pipeline, and presents a proposal batch you can review interactively.
@@ -128,9 +147,11 @@ behavior.
 
 Key knobs:
 
-- **`models.*`** — which Claude models the evaluator, proposer, and author
-  agents use. Heavier reasoning (proposer) defaults to Opus; cheaper passes
-  default to Sonnet.
+- **`models.*`** — which Claude models each agent uses. The evaluator and
+  proposer default to Opus for the deepest reasoning; the high-volume
+  per-turn pass (`stage_1a`) and the author default to Sonnet for cost
+  efficiency. Set on first run via the interactive picker (or
+  `--pick-models`).
 - **`maintenance.trigger_thresholds`** — when maintenance auto-runs
   (sessions, decisions, gaps, time since last).
 - **`stale_gap_threshold_sessions`** — when a gap is considered stale and

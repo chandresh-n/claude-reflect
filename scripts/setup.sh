@@ -76,6 +76,20 @@ fi
 
 ok "git: $(git --version)"
 
+# Claude Code — claude-reflect drives all of its agents by shelling out to
+# `claude -p`, so the `claude` binary must be installed and authenticated.
+# Check now so the user finds out here, not deep into their first review run.
+if command -v claude &>/dev/null; then
+    ok "claude (Claude Code): $(claude --version 2>/dev/null | head -1 || echo found)"
+else
+    warn "Claude Code ('claude') is not on PATH."
+    warn "claude-reflect drives its agents by shelling out to 'claude -p',"
+    warn "so you'll need it before running a review."
+    warn "Install it from https://claude.com/claude-code, then authenticate"
+    warn "by running 'claude' once interactively (it walks you through /login)."
+    warn "Setup will continue, but 'claude-reflect review' won't work until this is done."
+fi
+
 # --------------------------------------------------------------------------
 # Install
 # --------------------------------------------------------------------------
@@ -234,8 +248,15 @@ if [[ "$INSTALL_MODE" == "venv" ]]; then
     info "Open a new terminal (or 'source ~/.zshrc' / 'source ~/.bashrc') before using:"
 fi
 
+echo "Try it safely first (synthetic sessions, no real history touched):"
+echo "  claude-reflect review --fixtures-dir fixtures/sessions/"
+echo ""
+echo "Then, in your own repo:"
 echo "  claude-reflect status                       # check if a repo is initialized"
 echo "  claude-reflect review --pick                # interactively pick recent sessions"
 echo "  claude-reflect review --range 'yesterday'   # run a pass over a date range"
 echo "  claude-reflect maintenance                  # trigger maintenance"
+echo ""
+echo "Note: 'review' makes paid Claude calls via your Claude Code session."
+echo "The fixtures run above is the cheapest way to see the tool in action."
 echo ""

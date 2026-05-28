@@ -46,6 +46,21 @@ claude-reflect review --range "last 7 days"
 If you'd rather check before running, `claude-reflect status` reports
 whether the knowledge base is initialized and how many records exist.
 
+### Trying it without your real history
+
+To exercise the full pipeline against synthetic sessions — without
+touching your real Claude Code history — point a review at the bundled
+fixtures:
+
+```bash
+claude-reflect review --fixtures-dir fixtures/sessions/
+```
+
+KB state for this run is written under `fixtures/sessions/.claude-reflect/`
+(gitignored), isolated from your real KB. This is the cheapest way to see
+what claude-reflect produces. Note that a review still makes paid Claude
+calls via your Claude Code session; the fixtures are kept small on purpose.
+
 ---
 
 ## Running a review
@@ -167,17 +182,34 @@ and never overwrites it.
 
 ```yaml
 models:
-  evaluator: claude-sonnet-4-6    # reads sessions, identifies patterns
-  proposer:  claude-opus-4-6      # plans changes (hardest reasoning)
+  stage_1a:  claude-sonnet-4-6    # per-turn descriptions (high-volume)
+  evaluator: claude-opus-4-7      # session synthesis + cross-session gaps
+  proposer:  claude-opus-4-7      # plans changes (deepest reasoning)
   author:    claude-sonnet-4-6    # writes git diffs
 ```
 
-The proposer defaults to Opus because it does the deepest reasoning. The
-evaluator and author default to Sonnet for cost efficiency. Override per
-agent if your priorities differ.
+The evaluator and proposer default to Opus because they do the deepest
+reasoning. `stage_1a` (per-turn descriptions) and the author default to
+Sonnet for cost efficiency. Override per agent if your priorities differ.
 
-> Note for v0.1: model selection is a static default per agent. A
-> per-run model selector is on the roadmap.
+#### First-run model picker
+
+The **first** time you run `review` in a repo, claude-reflect prompts an
+interactive picker for the model behind each agent (`stage_1a`,
+`evaluator`, `proposer`, `author`). Each prompt shows the default in
+brackets — press Enter to accept it. Your selection is written to the
+`models` section of `config.yaml` and reused silently on every later run.
+
+To re-trigger the picker after the first run:
+
+```bash
+claude-reflect review --pick-models --range "last 7 days"
+```
+
+In a **non-interactive shell** (CI, piped stdin, no TTY) the picker is
+skipped entirely and the defaults above are used silently — scripted runs
+never hang waiting for input. Edit the `models` section of
+`config.yaml` directly to change models in that case.
 
 ### Maintenance thresholds
 
