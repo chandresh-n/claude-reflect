@@ -202,6 +202,11 @@ On failure:
   learns from this text on future runs, so it must name what could not be done
   and why.
 - Produce no scores, grades, or rankings of any kind.
+- Emit strictly valid JSON. The file you author goes inside the "content" JSON
+  string, so every double quote in the file must be escaped as \\" and every
+  newline as \\n — an unescaped quote or a raw newline makes the whole response
+  unparseable and discards your work. Mentally round-trip the content as a JSON
+  string before returning it.
 </rules>
 
 <example>

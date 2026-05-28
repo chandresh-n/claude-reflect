@@ -206,6 +206,11 @@ strings. Keep diff_reference and files_touched null — the author populates the
   not order the proposals by importance. The human reviews each on its merits;
   ordering in the batch is navigational only. Rationale: a scalar priority from
   an LLM flattens the multi-dimensional picture and drifts over time.
+- Emit strictly valid JSON. The whole batch is parsed as one object, so a single
+  malformed string sinks every proposal. Inside any prose field (prose_summary,
+  how, prediction, notes, behavior_constraints), do not use raw double quotes —
+  prefer single quotes when you quote a term, command, or path (write 'pytest',
+  not "pytest") — and never put a raw newline or control character in a string.
 </rules>
 
 <forced_novelty>

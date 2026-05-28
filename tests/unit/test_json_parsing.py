@@ -84,3 +84,48 @@ def test_nested_braces_are_handled() -> None:
     """Brace-fallback uses last '}' so nested objects parse correctly."""
     raw = "Preamble {\"a\": {\"b\": 1}, \"c\": [{\"d\": 2}]} trailing"
     assert extract_json(raw) == {"a": {"b": 1}, "c": [{"d": 2}]}
+
+
+# ---------------------------------------------------------------------------
+# Strategy 4: structural repair via json_repair (recovers LLM JSON defects)
+# ---------------------------------------------------------------------------
+
+# These exercise the repair fallback; skip cleanly if the optional dependency
+# is absent so the rest of the suite still runs.
+json_repair = pytest.importorskip("json_repair")
+
+
+def test_repair_unescaped_quote_in_string_value() -> None:
+    """The real proposer failure: an unescaped double quote inside a prose
+    field ends the string early and breaks the rest of the object. The
+    repair fallback must recover it into the intended object."""
+    raw = '{"a": "the agent ran "pytest" then stopped", "b": 2}'
+    assert extract_json(raw) == {"a": 'the agent ran "pytest" then stopped', "b": 2}
+
+
+def test_repair_trailing_comma() -> None:
+    assert extract_json('{"a": 1, "b": 2,}') == {"a": 1, "b": 2}
+
+
+def test_repair_recovers_object_with_preamble_and_defect() -> None:
+    """Prose preamble AND a structural defect together — the brace substring
+    is repaired into the intended object."""
+    raw = 'Here is the batch: {"id": "p1", "note": "said "hi" loudly"} done'
+    out = extract_json(raw)
+    assert out["id"] == "p1"
+    assert out["note"] == 'said "hi" loudly'
+
+
+def test_repair_only_accepts_objects_not_junk_lists() -> None:
+    """Guard: json_repair coerces '{not valid}' into a junk list, which must
+    NOT be accepted — extract_json still raises on it (regression guard for
+    test_invalid_json_inside_fence_raises)."""
+    with pytest.raises(json.JSONDecodeError):
+        extract_json("```json\n{not valid}\n```")
+
+
+def test_repair_does_not_salvage_pure_prose() -> None:
+    """Pure prose has no object to recover; it must still raise rather than
+    be coerced into an empty string by the repairer."""
+    with pytest.raises(json.JSONDecodeError):
+        extract_json("not json at all, just prose")
