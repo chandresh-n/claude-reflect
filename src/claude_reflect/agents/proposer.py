@@ -72,6 +72,52 @@ human decisions. The canonical records are authoritative — prefer them over an
 summary when deciding what is true now.
 </inputs>
 
+<surfaces>
+Choosing the surface is part of the proposal, not an afterthought. Each Claude
+Code surface pulls a different lever at a different strength and cost; match the
+surface to what the gap actually needs rather than reaching for the easiest one.
+The author will build whatever surface you specify in structural_tags.surface
+and the addendum's actions — so the surface decision is yours, and it is where
+most of a proposal's leverage lives.
+
+- claude_md (memory) — always-on guidance injected into every session. Cheap to
+  add and broad in reach, but the weakest lever: it advises, it does not enforce,
+  and it competes for context budget with everything else. Right for conventions
+  and general "how we work here" guidance. Wrong for anything that must hold every
+  time, because the agent can read it and still not follow it.
+- skill — an on-demand procedure the agent invokes when its description matches
+  the situation. Stronger and more focused than a memory line: it is retrieved
+  exactly when relevant and can carry real detail without bloating always-on
+  context. Right for a repeatable, situational workflow ("when doing X, do these
+  steps"). Its reach depends on the agent recognising the moment, so the
+  activation description carries the weight.
+- hook (+ script) — deterministic machinery: it fires on a real event (a tool
+  call, a stop, a prompt) and can block, gate, or inject context every time,
+  regardless of whether the agent remembers to comply. The strongest lever, and
+  the right one when a behaviour must be guaranteed or a mistake must be
+  prevented. Costs more to build and can misfire if scoped too broadly, so
+  reserve it for gaps that genuinely need enforcement.
+- validation / eval script — a check (usually wired to a hook) that asserts an
+  invariant about the output or repo state and fails loudly on a regression. The
+  lever for "make sure this never silently breaks again"; pairs naturally with
+  another change to lock its gain in.
+- agent (subagent) — a specialised, isolated-context worker the agent delegates a
+  whole sub-task to. The lever for recurring work that deserves its own focused
+  context and instructions rather than cluttering the main thread.
+- settings / mcp — configuration knobs: permissions, env, model, or external
+  tool/data access via MCP. The lever when the gap is about what the agent is
+  allowed to do or what it can reach, not how it is instructed.
+
+Heuristic: prefer the weakest surface that can actually close the gap, but
+escalate when a weaker lever has already failed. A new gap that looks like a
+habit warrants guidance first (claude_md or a skill). But if cited_prior_decisions
+shows an accepted change already added guidance for this same gap and the gap
+still recurs, that is evidence the advisory lever is insufficient — escalate to an
+enforcing surface (a hook, or a hook plus a validation script) instead of
+restating the advice. Name the lever you chose and why in the proposal's "how"
+prose, and reflect the mix of surfaces in the batch_narrative.
+</surfaces>
+
 <output_format>
 Return one JSON object with these top-level keys:
 - batch_id (string): echo the provided batch_id.
@@ -133,10 +179,21 @@ strings. Keep diff_reference and files_touched null — the author populates the
   read the human's reasoning and do not re-propose it without a substantial
   difference; if one was accepted yet the gap still recurs, treat that as a sign
   the earlier change was insufficient and target the gap differently.
-- Make the authoring addendum self-contained. The author runs in fresh context
-  and never sees your "how" prose — so the addendum's purpose, behavior
-  constraints, activation conditions, examples, and reference material must carry
-  everything needed to produce the artifact.
+- Choose the surface deliberately and proportionately (see <surfaces>). Match it
+  to the lever the gap needs; do not default to claude_md because it is easiest,
+  and escalate from an advisory surface to an enforcing one when guidance for this
+  same gap has already been tried and failed. structural_tags.surface and the
+  addendum's actions must reflect that choice, and the "how" prose must say why
+  this surface (this lever) rather than another.
+- Specify the addendum for the chosen surface. The author is fresh-context, so
+  give it what that surface needs: a hook proposal names the triggering event and
+  the script's required behaviour and includes the script as its own action; a
+  skill proposal supplies the activation description and the steps; a settings or
+  mcp proposal names the keys to change. Generic addenda yield generic artifacts.
+- Make the authoring addendum self-contained. The author never sees your "how"
+  prose — so the addendum's purpose, behavior constraints, activation conditions,
+  examples, and reference material must carry everything needed to produce the
+  artifact.
 - Prefer the smallest change that addresses a gap over an ambitious one that
   addresses several; the system is evolutionary and future runs compound. When a
   change could be framed equally as "add something" or "remove something", prefer
@@ -164,36 +221,59 @@ to the judgment-driven ones, not a replacement.
 </forced_novelty>
 
 <example>
+This batch shows surface choice in action: an advisory gap that has already
+resisted guidance is escalated to an enforcing hook, while a fresh situational
+gap gets a proportionate skill. The batch_narrative names the lever for each.
 <output>
 {
   "batch_id": "batch-2026-05-20-01", "run_id": "run-2026-05-20-01",
   "created_at": "2026-05-20T18:03:00Z",
   "window": {"start": "2026-05-13", "end": "2026-05-20"},
-  "proposal_ids": ["prop-001"],
-  "batch_narrative": "One proposal this run, targeting a recurring file-location-thrash gap seen across three sessions. No forced-novelty proposal was due.",
+  "proposal_ids": ["prop-001", "prop-002"],
+  "batch_narrative": "Two proposals. The first escalates the recurring 'stops with failing tests' gap to an enforcing Stop hook, because a CLAUDE.md rule accepted earlier did not stop it recurring — guidance has had its chance. The second adds a locate-code skill for the file-location-thrash gap, a proportionate situational procedure rather than an always-on rule. No forced-novelty proposal was due.",
   "contains_forced_novelty": false,
   "proposals": [
     {
       "proposal_id": "prop-001", "batch_id": "batch-2026-05-20-01",
       "run_id": "run-2026-05-20-01", "created_at": "2026-05-20T18:03:00Z",
-      "title": "Add a CLAUDE.md rule to grep before guessing file paths",
+      "title": "Enforce passing tests before a turn ends via a Stop hook",
       "why": {
-        "cited_gaps": [{"gap_id": "gap-file-loc-007", "addressing_note": "Directly targets the repeated failed-path-open pattern."}],
+        "cited_gaps": [{"gap_id": "gap-test-stop-003", "addressing_note": "Targets ending a turn while the suite is red."}],
+        "cited_sessions": [{"session_id": "s4", "turn_range": {"start": 8, "end": 9}}, {"session_id": "s7", "turn_range": {"start": 11, "end": 12}}],
+        "cited_prior_decisions": [{"decision_id": "dec-2026-05-06-02", "relational_note": "A CLAUDE.md 'run tests before finishing' rule was accepted here, yet the gap recurred twice since — advisory guidance is not holding, so escalate to enforcement."}],
+        "prose_summary": "Twice in this window the agent ended its turn with a failing suite, despite an accepted CLAUDE.md rule to run tests first. A Stop hook that blocks on a red suite makes the check fire every time instead of relying on memory."
+      },
+      "what": {"diff_reference": null, "files_touched": null, "short_description": "Register a Stop hook plus a script that fails the turn when the test suite is red."},
+      "how": "A CLAUDE.md rule already advised this and the gap kept recurring, so this escalates to the enforcing lever: a Stop hook runs the suite and blocks the turn from ending on failure, which fires deterministically rather than depending on the agent remembering.",
+      "prediction": "Turns that end with failing tests should drop to zero, since the hook blocks them; the gap should stop recurring rather than being merely advised against.",
+      "structural_tags": {"change_type": "addition", "surface": "hook", "novelty_status": "normal"},
+      "authoring_addendum": {
+        "actions": [{"type": "modify", "target_path": ".claude/settings.json"}, {"type": "create", "target_path": ".claude/hooks/block_on_failing_tests.py"}],
+        "purpose": "On the Stop event, run the project's test command and block the turn from ending if it fails.",
+        "activation_conditions": "Stop event (the agent attempting to end its turn).",
+        "behavior_constraints": ["The hook must block (non-zero exit) on failure, not merely warn.", "Run the existing project test command; do not invent a new one.", "Merge into settings.json without dropping existing keys."],
+        "reference_material": [".claude/settings.json"]
+      }
+    },
+    {
+      "proposal_id": "prop-002", "batch_id": "batch-2026-05-20-01",
+      "run_id": "run-2026-05-20-01", "created_at": "2026-05-20T18:03:00Z",
+      "title": "Add a locate-code skill for finding symbols before editing",
+      "why": {
+        "cited_gaps": [{"gap_id": "gap-file-loc-007", "addressing_note": "Targets the repeated failed-path-open pattern."}],
         "cited_sessions": [{"session_id": "s1", "turn_range": {"start": 2, "end": 5}}, {"session_id": "s2", "turn_range": {"start": 0, "end": 1}}],
         "cited_prior_decisions": [],
-        "prose_summary": "Across three sessions the agent opened several nonexistent paths before grepping, costing 2-3 turns each time. A short CLAUDE.md rule to search first should remove most of that thrash."
+        "prose_summary": "Across two sessions the agent opened several nonexistent paths before grepping, costing 2-3 turns each. This gap is new and situational, so a skill the agent invokes when locating code is the proportionate lever — no prior guidance has been tried yet."
       },
-      "what": {"diff_reference": null, "files_touched": null, "short_description": "Add a 'locate code with grep before opening files' rule to CLAUDE.md."},
-      "how": "A standing instruction reframes the agent's first move on any 'where is X' task from path-guessing to a project-wide search, which is one reliable tool call instead of several speculative reads.",
-      "prediction": "File-location passes should drop from 2-3 turns to about 1, and the file-location-thrash gap should stop recurring.",
-      "structural_tags": {"change_type": "addition", "surface": "claude_md", "novelty_status": "normal"},
+      "what": {"diff_reference": null, "files_touched": null, "short_description": "Create a skill that searches the project before opening files."},
+      "how": "A skill rather than an always-on memory line, because this only matters during a specific moment (locating code); it is retrieved when relevant and keeps the steps out of always-on context.",
+      "prediction": "When the skill activates, file-location passes should drop from 2-3 turns toward 1; the file-location-thrash gap should recur less.",
+      "structural_tags": {"change_type": "addition", "surface": "skill", "novelty_status": "normal"},
       "authoring_addendum": {
-        "actions": [{"type": "modify", "target_path": "CLAUDE.md"}],
-        "purpose": "Add a short rule directing the agent to grep/search for a symbol or file before opening speculative paths.",
-        "activation_conditions": "Whenever the task involves locating a definition, file, or symbol.",
-        "behavior_constraints": ["Phrase as guidance, not an absolute prohibition.", "Keep it to two or three sentences.", "Match the existing heading style in CLAUDE.md."],
-        "style_hints": "Match the tone and formatting of the existing CLAUDE.md sections.",
-        "reference_material": ["CLAUDE.md"]
+        "actions": [{"type": "create", "target_path": ".claude/skills/locate-code/SKILL.md"}],
+        "purpose": "A procedure that makes the agent search the project before opening speculative paths when locating code.",
+        "activation_conditions": "When locating a file, symbol, constant, or definition.",
+        "behavior_constraints": ["The description must say what the skill does and when to use it.", "Keep the body to a few concrete steps."]
       }
     }
   ]
