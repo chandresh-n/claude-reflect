@@ -512,3 +512,114 @@ def test_identify_corpus_gaps_cache_invalidates_when_upstream_changes(
         "Changing an upstream session_narrative must cascade to a "
         "stage 4 cache miss."
     )
+
+
+# ---------------------------------------------------------------------------
+# Known-gap injection — the model is shown existing matchable gaps
+# ---------------------------------------------------------------------------
+
+
+def _seed_gap(repo: Path, *, kind: str, characterization: str,
+              status: str = "open") -> str:
+    from claude_reflect.storage.gap_record import create_gap_record
+    rec = create_gap_record(repo, {
+        "characterization": characterization,
+        "kind": kind,
+        "first_observed_at": "2026-05-01T00:00:00Z",
+        "last_observed_at": "2026-05-01T00:00:00Z",
+        "occurrence_count": 1,
+        "evidence": [{
+            "session_id": "older",
+            "turn_range": {"start": 0, "end": 1},
+            "magnitude": {"additional_turns": 1, "additional_tokens": 100,
+                          "correction_required": False},
+        }],
+        "status": status,
+        "related_proposals": [],
+    })
+    return rec["identifier"]
+
+
+def test_open_gap_is_injected_into_the_prompt(tmp_path: Path) -> None:
+    """An existing open gap must appear in the user prompt so the model can
+    match a recurrence against it instead of minting a duplicate."""
+    from claude_reflect.agents.pipeline.stage_4 import identify_corpus_gaps  # type: ignore
+
+    gap_id = _seed_gap(tmp_path, kind="file-location-thrash",
+                       characterization="Guesses paths before searching.")
+
+    runner = MagicMock()
+    runner.invoke.return_value = _canned_corpus_response([
+        _canned_gap_observation(),
+    ])
+
+    identify_corpus_gaps(
+        per_turn_observations=[_per_turn_observation("s1", 0)],
+        pass_classifications=[_pass_classification("s1", 0, 0)],
+        session_narratives=[_narrative("s1")],
+        runner=runner, repo=tmp_path, model="m",
+    )
+
+    user_prompt = runner.invoke.call_args.kwargs["user_prompt"]
+    assert gap_id in user_prompt, "open gap's identifier must be in the prompt"
+    assert "Guesses paths before searching." in user_prompt, (
+        "open gap's characterization must be in the prompt"
+    )
+
+
+def test_addressed_gap_is_not_offered_as_a_match_candidate(tmp_path: Path) -> None:
+    """Only open/stale gaps are matchable; an addressed gap must not appear in
+    the prompt (matching it would regress its status on an incidental hit)."""
+    from claude_reflect.agents.pipeline.stage_4 import identify_corpus_gaps  # type: ignore
+
+    addressed_id = _seed_gap(tmp_path, kind="resolved-thing",
+                             characterization="Already handled.",
+                             status="addressed")
+
+    runner = MagicMock()
+    runner.invoke.return_value = _canned_corpus_response([
+        _canned_gap_observation(),
+    ])
+
+    identify_corpus_gaps(
+        per_turn_observations=[_per_turn_observation("s1", 0)],
+        pass_classifications=[_pass_classification("s1", 0, 0)],
+        session_narratives=[_narrative("s1")],
+        runner=runner, repo=tmp_path, model="m",
+    )
+
+    user_prompt = runner.invoke.call_args.kwargs["user_prompt"]
+    assert addressed_id not in user_prompt, (
+        "addressed gaps must not be offered as match candidates"
+    )
+
+
+def test_unknown_matched_gap_id_falls_back_to_new_record(tmp_path: Path) -> None:
+    """If the model returns a matched_gap_id that does not resolve to a real
+    record, the observation must not be silently dropped — it becomes a new
+    gap so its evidence is still captured."""
+    from claude_reflect.agents.pipeline.stage_4 import identify_corpus_gaps  # type: ignore
+
+    runner = MagicMock()
+    runner.invoke.return_value = _canned_corpus_response([
+        _canned_gap_observation(matched_gap_id="does-not-exist-id"),
+    ])
+
+    out = identify_corpus_gaps(
+        per_turn_observations=[_per_turn_observation("s1", 0)],
+        pass_classifications=[_pass_classification("s1", 0, 0)],
+        session_narratives=[_narrative("s1")],
+        runner=runner, repo=tmp_path, model="m",
+    )
+
+    # A real record was created and the returned obs points at it.
+    gaps_dir = tmp_path / ".claude-reflect" / "gaps"
+    gap_files = list(gaps_dir.glob("*.json"))
+    assert len(gap_files) == 1, (
+        "an unresolvable matched_gap_id must fall back to creating a new "
+        f"record, not be dropped; found {len(gap_files)} gap files"
+    )
+    resolved_id = out[0].get("matched_gap_id")
+    assert resolved_id and resolved_id != "does-not-exist-id", (
+        "returned observation must point at the newly created record's id"
+    )

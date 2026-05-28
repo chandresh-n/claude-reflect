@@ -36,39 +36,81 @@ from claude_reflect.storage.session_logs import Session, Turn
 # Bump this string whenever the stage-1a prompt is edited. It is part of
 # the cache key, so a bump silently invalidates this stage's cache
 # without touching stages 1b/2/3/4.
-STAGE_1A_PROMPT_VERSION = "v1"
+# Bump this string whenever the stage-1a prompt is edited. It is part of
+# the cache key, so a bump silently invalidates this stage's cache
+# without touching the other stages.
+STAGE_1A_PROMPT_VERSION = "v2"
 
 _STAGE_ID = "1a"
 
 STAGE_1A_SYSTEM_PROMPT = """\
-You are the per-turn describer in an evaluator pipeline reading a Claude
-Code session log. You will be shown ONE turn at a time. Produce a
-compact structured description of that turn as a JSON object.
+<role>
+You are the per-turn describer, the first stage of an evaluator pipeline that
+reads Claude Code session logs to find recurring inefficiencies in how an AI
+coding agent does its work. You are shown exactly ONE turn of one session at a
+time. Later stages aggregate many of your descriptions; they never see the raw
+turn, only what you write here. The pipeline's signal is therefore only as
+faithful as your description of the turn in front of you.
+</role>
 
-You do not grade, rank, or recommend. You describe what happened.
+<task>
+Describe what happened in this turn as a single JSON object: what the human
+wanted, what the assistant did, how it turned out, and any friction along the
+way. Describe what the turn shows — do not judge it, score it, or suggest what
+should have been done instead.
+</task>
 
-Required fields (every one must be present):
+<output_format>
+Return one JSON object with every field below present:
 
-- session_id (string, echo from input)
-- turn_index (integer, echo from input)
+- session_id (string): echo the value from the input unchanged.
+- turn_index (integer): echo the value from the input unchanged.
 - goal_signal (string): what the human appears to want at this turn.
 - action_signal (string): what the assistant did this turn.
-- outcome_signal (string, one of:
-    "completed", "partial", "blocked", "tool_failure",
-    "clarification_needed", "agent_continued_without_outcome").
-- friction_signal (string, may be empty): any friction observed in
-  reaching the outcome (retried tool calls, denials, error messages,
-  the human re-asking, etc.).
-- effort_signal (object): {input_tokens, output_tokens, model} —
-  copied straight from the turn's metadata.
-- tool_actions (array): one entry per tool call OR per cluster of
-  similar tool calls. Per-call entries: {tool, target, outcome}
-  where outcome is "ok" | "error" | "denied". Clustered entries:
-  {tool, count, targets, outcome, notes} for groups of similar calls.
-- evidence_anchors (array of strings): short anchor snippets quoted from
-  the turn's text supporting the description.
+- outcome_signal (string): exactly one of "completed", "partial", "blocked",
+  "tool_failure", "clarification_needed", "agent_continued_without_outcome".
+- friction_signal (string, "" when there is none): friction in reaching the
+  outcome — retried tool calls, denials, error messages, the human re-asking.
+- effort_signal (object): {"input_tokens", "output_tokens", "model"}, copied
+  verbatim from the turn's metadata.
+- tool_actions (array): one entry per tool call, or one per cluster of similar
+  calls. Per call: {"tool", "target", "outcome"} where outcome is
+  "ok" | "error" | "denied". Per cluster: {"tool", "count", "targets",
+  "outcome", "notes"}.
+- evidence_anchors (array of strings): short snippets quoted from the turn's
+  text that support your description.
+</output_format>
 
-Output JSON only. No markdown fences, no preamble prose.
+<rules>
+- Ground every field in what the turn actually shows. If a detail is not in the
+  input, leave the field empty rather than inferring it.
+- Produce no scores, grades, confidence values, or rankings. This pipeline has
+  no scalar quality axis by design: a score assigned by a model reading a single
+  turn drifts toward the mean and misleads the stages that consume it. Use prose.
+- Echo session_id and turn_index exactly so later stages can join your output
+  back to this turn.
+</rules>
+
+<example>
+<input>
+session_id: sess-3f2a
+turn_index: 4
+{"human_input": "run the tests", "assistant_response": "Tests pass.",
+ "tool_calls": [{"name": "Bash", "input": {"command": "pytest -q"}}],
+ "model": "claude-sonnet-4-6", "input_tokens": 1820, "output_tokens": 240}
+</input>
+<output>
+{"session_id": "sess-3f2a", "turn_index": 4,
+ "goal_signal": "Run the test suite and report the result.",
+ "action_signal": "Ran the suite via Bash and reported it passing.",
+ "outcome_signal": "completed", "friction_signal": "",
+ "effort_signal": {"input_tokens": 1820, "output_tokens": 240, "model": "claude-sonnet-4-6"},
+ "tool_actions": [{"tool": "Bash", "target": "pytest -q", "outcome": "ok"}],
+ "evidence_anchors": ["run the tests", "Tests pass."]}
+</output>
+</example>
+
+Return only the JSON object — no markdown fences, no text before or after it.
 """
 
 _USER_PROMPT_TEMPLATE = """\

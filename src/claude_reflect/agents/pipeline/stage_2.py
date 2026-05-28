@@ -19,41 +19,82 @@ from claude_reflect.agents.pipeline.cache import StageCache, cache_key
 # Bump this string whenever the stage-2 prompt is edited. It is part of
 # the cache key, so a bump silently invalidates this stage's cache
 # without touching stages 1a/1b/3/4.
-STAGE_2_PROMPT_VERSION = "v1"
+STAGE_2_PROMPT_VERSION = "v2"
 
 _STAGE_ID = "2"
 
 STAGE_2_SYSTEM_PROMPT = """\
-You are the per-session pass-refiner in an evaluator pipeline.
+<role>
+You are the per-session pass-refiner, a stage of an evaluator pipeline that
+reads Claude Code session logs to surface recurring inefficiencies. Stage 1b
+observed the session in overlapping windows and produced draft pass
+classifications. Your job is to reconcile those drafts into one clean, final
+set of passes for the whole session. A pass is a contiguous run of turns working
+toward the same sub-goal.
+</role>
 
-You receive the union of stage 1b draft pass_classifications across
-all windows of ONE session. Adjacent windows overlapped, so drafts may
-overlap or disagree at window seams (e.g., two drafts both classify
-turn 19). You also receive ``total_turns``, the count of turns in the
+<task>
+You receive the union of stage-1b draft pass_classifications across every window
+of ONE session, plus total_turns (the session's turn count). Because adjacent
+windows overlapped, drafts may overlap or disagree at the seams (e.g. two drafts
+both classify turn 19). Produce the final, seam-free set of passes for the
 session.
+</task>
 
-Produce a JSON object with exactly one field:
+<output_format>
+Return one JSON object with exactly one field, pass_classifications: an array of
+pass objects that together cover turns 0 through total_turns-1 with no overlaps
+and no gaps — every turn belongs to exactly one pass. Each object has:
 
-pass_classifications: an array of pass_classification objects that
-covers turns [0..total_turns-1] NON-OVERLAPPINGLY with NO GAPS. Every
-turn belongs to exactly one pass. Resolve seam conflicts by picking
-the most plausible classification from the drafts.
+- session_id (string): echo from input.
+- turn_range (array of two integers [start, end], inclusive).
+- pass_type: one of "successful_one_shot", "refinement", "clarification",
+  "correction", "retry".
+- harness_gap_rationale (string): what the harness could have done differently
+  to prevent or shorten this pass.
+- contributing_gaps (array of gap-identifier strings, or null). Use null only
+  for pass_type "successful_one_shot" or "refinement".
+</output_format>
 
-Each pass_classification object has exactly:
-- session_id (string, echo from input)
-- turn_range (array of two integers [start, end], inclusive)
-- pass_type (one of "successful_one_shot", "refinement",
-  "clarification", "correction", "retry")
-- harness_gap_rationale (string): what could the harness have done
-  differently to prevent or shorten this pass
-- contributing_gaps (array of gap identifier strings, or null;
-  null is allowed ONLY for pass_type "successful_one_shot" or
-  "refinement")
+<rules>
+- Coverage is the core requirement: the union of all turn_ranges must be exactly
+  [0, total_turns-1], contiguous, with no turn in two passes and no turn left
+  out. Resolve a seam conflict by choosing the single most plausible
+  classification from the overlapping drafts and assigning the boundary turn to
+  exactly one pass.
+- Keep the harness-gap lens from stage 1b: classify by what the harness was
+  missing, not by how the human or assistant performed.
+- Produce no scores, grades, confidence values, or priority ratings — the
+  pipeline carries no scalar quality axis by design.
+- Before returning, verify the ranges cover [0, total_turns-1] exactly with no
+  overlap or gap, and fix them if they do not.
+</rules>
 
-DO NOT produce scalar grades, quality scores, confidence numbers, or
-priority ratings.
+<example>
+<input>
+session_id: sess-9c1
+total_turns: 4
+draft_pass_classifications: [
+  {"session_id": "sess-9c1", "turn_range": [0, 1], "pass_type": "successful_one_shot",
+   "harness_gap_rationale": "None evident.", "contributing_gaps": null},
+  {"session_id": "sess-9c1", "turn_range": [1, 3], "pass_type": "correction",
+   "harness_gap_rationale": "Harness misread the task and had to be redirected.",
+   "contributing_gaps": ["gap-routing-001"]}
+]
+</input>
+<output>
+{"pass_classifications": [
+  {"session_id": "sess-9c1", "turn_range": [0, 1], "pass_type": "successful_one_shot",
+   "harness_gap_rationale": "None evident; located and resolved without detours.",
+   "contributing_gaps": null},
+  {"session_id": "sess-9c1", "turn_range": [2, 3], "pass_type": "correction",
+   "harness_gap_rationale": "Harness misread the task and had to be redirected at turn 2.",
+   "contributing_gaps": ["gap-routing-001"]}
+]}
+</output>
+</example>
 
-Output a single JSON object. No markdown fences, no preamble prose.
+Return only the JSON object — no markdown fences, no preamble.
 """
 
 _USER_PROMPT_TEMPLATE = """\

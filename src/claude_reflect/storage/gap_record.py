@@ -3,10 +3,11 @@ Gap record read/write
 
 Spec ref: docs/spec/01-data-structures/gap-record.md
 
-Public API (three functions, no delete):
+Public API (four functions, no delete):
 - create_gap_record(repo, data) -> dict
 - read_gap_record(repo, gap_id) -> dict
 - update_gap_record(repo, gap_id, updates) -> dict
+- list_gap_records(repo, statuses=None) -> list[dict]
 
 Design constraints:
 - Append-only: no delete or remove function is exposed.
@@ -200,6 +201,36 @@ def read_gap_record(repo: Path, gap_id: str) -> dict:
         )
     with open(path, encoding="utf-8") as f:
         return json.load(f)
+
+
+def list_gap_records(repo: Path, statuses: Any = None) -> list[dict]:
+    """
+    Read every gap record in the knowledge base, optionally filtered by status.
+
+    Args:
+        repo: Root of the target git repository.
+        statuses: If given, an iterable of status strings; only records whose
+            ``status`` is in this set are returned. If None, all records are
+            returned.
+
+    Returns:
+        A list of gap record dicts, sorted by file name for determinism.
+        Returns an empty list if no gaps directory exists. Files that fail to
+        parse are skipped rather than raising.
+    """
+    gaps_dir = _gaps_dir(repo)
+    if not gaps_dir.is_dir():
+        return []
+    status_filter = frozenset(statuses) if statuses is not None else None
+    records: list[dict] = []
+    for path in sorted(gaps_dir.glob("*.json")):
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        if status_filter is None or record.get("status") in status_filter:
+            records.append(record)
+    return records
 
 
 def update_gap_record(repo: Path, gap_id: str, updates: dict) -> dict:

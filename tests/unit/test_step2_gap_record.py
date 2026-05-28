@@ -22,6 +22,7 @@ import pytest
 
 from claude_reflect.storage.gap_record import (
     create_gap_record,
+    list_gap_records,
     read_gap_record,
     update_gap_record,
 )
@@ -502,3 +503,37 @@ class TestNoScalarGrades:
             assert key not in read_back, (
                 f"Scalar grade field '{key}' found in read-back gap record."
             )
+
+
+# ---------------------------------------------------------------------------
+# list_gap_records — enumerate the canonical layer, optional status filter
+# ---------------------------------------------------------------------------
+
+class TestListGapRecords:
+    def _make(self, repo, *, kind, status):
+        data = VALID_GAP_RECORD.copy()
+        data["kind"] = kind
+        data["status"] = status
+        return create_gap_record(repo, data)
+
+    def test_empty_when_no_gaps_dir(self, tmp_git_repo):
+        """No knowledge base yet -> empty list, no error."""
+        assert list_gap_records(tmp_git_repo) == []
+
+    def test_returns_all_records(self, kb_repo):
+        self._make(kb_repo, kind="a", status="open")
+        self._make(kb_repo, kind="b", status="stale")
+        records = list_gap_records(kb_repo)
+        assert {r["kind"] for r in records} == {"a", "b"}
+
+    def test_status_filter(self, kb_repo):
+        self._make(kb_repo, kind="open-one", status="open")
+        self._make(kb_repo, kind="stale-one", status="stale")
+        self._make(kb_repo, kind="addressed-one", status="addressed")
+
+        matchable = list_gap_records(kb_repo, statuses={"open", "stale"})
+        kinds = {r["kind"] for r in matchable}
+        assert kinds == {"open-one", "stale-one"}, (
+            "status filter must include only the requested statuses; "
+            f"got {kinds}"
+        )
